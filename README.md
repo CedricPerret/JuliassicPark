@@ -23,7 +23,7 @@ This package is not yet registered. You can install it from GitHub:
 
 ```julia
 using Pkg
-Pkg.add(url="https://github.com/yourusername/JuliassicPark.jl")
+Pkg.add(url="https://github.com/CedricPerret/JuliassicPark.jl")
 ```
 
 Replace the URL with your actual repository when published.
