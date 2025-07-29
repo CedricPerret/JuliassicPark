@@ -8,7 +8,6 @@ using Distributed
     evol_model(parameters_input, fitness_function, repro_function; 
                sweep = Dict{Symbol, Vector}(), 
                additional_parameters = Dict(), 
-               transgen_var_index = [], 
                migration_function = nothing, 
                genotype_to_phenotype_mapping = identity)
 
@@ -26,7 +25,6 @@ Main entry point to run an evolutionary simulation or parameter sweep with user-
 # Keyword Arguments
 - `sweep::Dict{Symbol, <:AbstractVector}`: Optional parameter sweep. Each key is a parameter symbol; values are tested in combination.
 - `additional_parameters::Dict`: Optional dictionary of derived or fixed parameters to be merged in and saved to output.
-- `transgen_var_index::Vector{Int}`: Optional indices of individual variables to preserve across generations (e.g. for tracking).
 - `migration_function::Union{Function, Nothing}`: Optional function defining migration across patches or groups.
 - `genotype_to_phenotype_mapping::Function`: Optional mapping function, mainly for sexual reproduction. Defaults to `identity`.
 
@@ -49,7 +47,7 @@ Main entry point to run an evolutionary simulation or parameter sweep with user-
 """
 
 ## Wrapper (prepare parameters and put default, then call each part)
-function evol_model(parameters_input, fitness_function, repro_function; sweep=Dict{Symbol, Vector}(), additional_parameters= Dict{Symbol, Function}(), transgen_var_index = [], migration_function = nothing, genotype_to_phenotype_mapping = identity)
+function evol_model(parameters_input, fitness_function, repro_function; sweep=Dict{Symbol, Vector}(), additional_parameters= Dict{Symbol, Function}(), migration_function = nothing, genotype_to_phenotype_mapping = identity)
     @assert haskey(parameters_input, :z_ini) "Missing required parameter: `:z_ini`. Please provide the initial values or generators for the trait(s)."
     
 
@@ -334,77 +332,3 @@ function run_parameter_sweep_distributed(fun, sweep, parameters)
     end
 end
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# function parameter_sweep_evol_model(
-#     parameters_input,
-#     fitness_function,
-#     repro_function,
-#     sweep::Dict{Symbol, <:AbstractVector},
-#     split_sweep::Bool;
-#     additional_parameters = Dict(),
-#     transgen_var_index = [],
-#     migration_function = nothing,
-#     genotype_to_phenotype_mapping = identity
-# )
-#     parameters = deepcopy(parameters_input)
-#     parameters = merge(get_default_parameters(), parameters)
-#     append!(parameters[:parameters_to_omit],["other_output_name","boundaries","n_cst","distributed","parameters_to_omit","name_model","additional_parameters_to_omit","write_file","split_simul","distributed"])
-
-#     list_parameters_set, sweep_df = get_parameters_from_sweep(parameters, sweep)
-
-#     n = length(list_parameters_set)
-
-#     #--- Run a single simulation
-
-#     if parameters[:write_file] && split_sweep
-#         #-> We do not have to do thread safe collection. Simply run and save simulations. 
-#         Threads.@threads for i in 1:n
-#              run_sim(i)
-#         end
-#         return nothing
-#     else
-#         #-> We do have to do thread safe collection.
-#         # Prepare per-thread containers
-#         thread_results = Vector{Vector{DataFrame}}(undef, Threads.nthreads())
-#         for i in 1:Threads.nthreads()
-#             thread_results[i] = Vector{DataFrame}()
-#         end
-
-#         ## Each sub run should not be saved. Only the dataframe combining all at the end.
-#         write_file = parameters[:write_file]
-#         [parameters_set[:write_file] = false for parameters_set in list_parameters_set]
-
-#         Threads.@threads for i in 1:n
-#             dt =  run_sim(i)
-#             meta = repeat(sweep_df[i:i, :], inner = nrow(dt))
-#             thread_id = Threads.threadid()
-#             push!(thread_results[thread_id], hcat(meta, dt))
-#         end
-
-#         all_results = reduce(vcat, thread_results)
-#         if split_sweep
-#             #-> Return a vector of data_frame
-#             return all_results
-#         elseif !write_file
-#             #-> Return a single dataframe
-#             return vcat(all_results...)
-#         else
-#             #-> Write to file a single dataframe
-#             CSV.write(get_name_file(parameters[:name_model],parameters,Symbol.(parameters[:parameters_to_omit]),".csv"; swept=sweep), vcat(all_results...))
-#         end
-#     end
-# end
