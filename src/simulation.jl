@@ -207,24 +207,6 @@ function get_template_model(parameters_input, fitness_function, repro_function; 
 end
 
 
-
-
-
-# ## To allow user to define a fitness function which either give back only fitness or fitness and extra variables.
-# function make_safe_output(output)
-#     if output isa Tuple
-#         safe_output = function(output)
-#             return(output)
-#         end
-#     else
-#         safe_output = function(output)
-#             return(output,nothing)
-#         end
-#     end
-#     return(safe_output)
-# end
-
-
 """
     run_parameter_sweep_distributed(fun, sweep, parameters)
 

@@ -1,7 +1,9 @@
 # JuliassicPark.jl
 
 **JuliassicPark.jl** is a lightweight and flexible Julia package for simulating evolutionary models with customizable fitness functions.
-It is built for researchers and modelers who need both flexibility and convenience. JuliassicPark lets you define complex model logic and rich fitness functions, while handling the rest automatically: simulation loops, parameter management, data output, and parallel execution.
+It is built for researchers and modelers who need both flexibility and convenience. JuliassicPark lets you define complex model logic and rich fitness functions, while handling the rest automatically: simulation loops, parameter management, data output, and parallel execution. 
+
+One of its key advantages is that it’s easy to learn and quick to use, you don’t need to learn a large API.
 
 The goal is simple: spend less time on boilerplate, and more time exploring ideas.
 
@@ -56,7 +58,8 @@ res = evol_model(parameters_example, gaussian_fitness_function, reproduction_WF)
 
 
 ```julia
-evol_model(parameters, fitness_function, reproduction_method; kwargs...)
+evol_model(parameters, fitness_function, reproduction_method; 
+sweep=Dict{Symbol, Vector}(), additional_parameters= Dict{Symbol, Function}(), migration_function = nothing genotype_to_phenotype_mapping = identity)
 ```
 
 ### 🧾 Arguments
@@ -72,6 +75,7 @@ evol_model(parameters, fitness_function, reproduction_method; kwargs...)
 #### Optional:
 | Argument              | Type                         | Description                                                                 |
 |-----------------------|------------------------------|-----------------------------------------------------------------------------|
+| `sweep`          | `Dict`       |  A dictionary specifying which parameters to vary across runs. Triggers automatic parameter sweep. See [Parameter Sweep](#parameter-sweep). |
 | `additional_parameters`          | `Dict`       | A dictionary of additional parameters to compute at runtime. See [Parameters Computed at Runtime](#Parameters-Computed-at-Runtime). |
 | `migration_function`    | `Function`                   | Function describing if and how migration happens after reproduction. Built-in name (e.g. `random_migration`) or custom function. |
 | `genotype_to_phenotype_mapping` | `Function`       | Function describing how phenotype is calculated from genotype. Default functions are defined for sexual reproduction. |
@@ -188,6 +192,18 @@ set_default_parameters!(...)       # Override defaults globally
 reset_default_parameters!()        # Reset to built-in defaults
 ```
 
+#### Parameter sweep
+
+You can run a parameter sweep by providing a dictionary that specifies which parameters to vary and over which values.  
+All possible combinations are generated automatically (Cartesian product).
+
+```julia
+parameter_sweep = Dict(:sigma => [1.0, 2.0], :mu_m => [0.05, 0.1])
+evol_model(parameters_example, gaussian_fitness_function, reproduction_WF; sweep = parameter_sweep)
+```
+
+For full control over how simulations are distributed and saved, see [Parallelisation and Output Splitting](#-parallelisation-and-output-splitting).
+
 ---
 
 ## 📤 Output
@@ -228,6 +244,9 @@ Formatting conventions:
 - Float values are rounded to 5 digits
 - File parameters are printed using only the filename (e.g. `network.csv` => `network`)
 - Distributions are formatted as `Name_param1_param2`, e.g. `Normal_0.0_0.5`
+
+
+
 
 ### 🧵 Parallelisation and Output Splitting
 
