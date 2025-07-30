@@ -677,7 +677,7 @@ const PARAMETER_DESCRIPTIONS = Dict(
     :additional_parameters_to_omit => "Additional derived parameters to exclude from output",
     :n_simul      => "Number of independent simulations",
     :split_simul  => "Whether to save each simulation replicate to a separate file. Requires :split_sweep = true. Also controls whether simulation replicates can be parallelised independently.",
-    :sweep_grid => "Whether to use a full Cartesian product (`true`, default) or zip mode (`false`)"
+    :sweep_grid => "Whether to use a full Cartesian product (`true`, default) or zip mode (`false`)",
     :split_sweep  => "Whether to save each parameter set to a separate file. Also controls whether parameter sets can be parallelised independently.",
     :simplify     => "Simplify population structure if possible"
 )
