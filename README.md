@@ -157,28 +157,29 @@ All simulation settings are passed via the `parameter` argument  which is either
 #### Optional Model Parameters
 
 ```
-:n_gen                => number of generations
-:n_print              => first generation to save
-:j_print              => interval between saves
-:n_ini                => individuals per patch
-:n_patch              => number of patches/groups
-:str_selection        => selection strength (fitness scaling)
-:mu_m                 => mutation rate
-:n_loci               => number of loci (for diploid/sexual reproduction)
-:delta                => allelic effect size (used in multilocus)
-:de                   => output resolution:
-                         'i' = individual
-                         'p' = patch
-                         'g' = generation
-:other_output_names => custom names for extra variables returned by the fitness function; overrides field names if a NamedTuple is used
-:write_file           => whether to write output to file
-:name_model           => prefix for output filenames
-:parameters_to_omit   => parameters to exclude from filename
-:additional_parameter_to_omit => Additional derived parameters to exclude from output
-:split_simul          => whether to save each simulation in a separate file
-:n_simul              => number of simulations to run
-:distributed          => run simulations in parallel
-:simplify             => if true and only one patch, use flat population vector
+:n_gen                     => Number of generations
+:n_ini                     => Initial number of individuals per patch
+:n_patch                   => Number of patches (groups)
+:n_loci                    => Number of loci (for diploid traits)
+:mu_m                      => Mutation rate per trait
+:sigma_m                   => Mutation effect (standard deviation)
+:bias_m                    => Bias in mutation (directional)
+:boundaries                => Trait bounds (min, max)
+:mutation_type             => Mutation kernel type (optional)
+:str_selection             => Strength of selection (scale fitness)
+:n_print                   => First generation to record output
+:j_print                   => Interval between outputs
+:de                        => Data resolution: 'g', 'p', or 'i'
+:other_output_names        => Custom names for extra variables returned by the fitness function; overrides field names if a NamedTuple is used
+:write_file                => Whether to write results to disk
+:name_model                => Prefix for output filename
+:parameters_to_omit        => Parameters excluded from filename
+:additional_parameters_to_omit => Additional derived parameters to exclude from output
+:n_simul                   => Number of independent simulations
+:split_simul               => Whether to save each simulation replicate to a separate file. Requires :split_sweep = true. Also controls whether simulation replicates can be parallelised independently.
+:sweep_grid                => Whether to use a full Cartesian product (`true`, default) or zip mode (`false`)
+:split_sweep               => Whether to save each parameter set to a separate file. Also controls whether parameter sets can be parallelised independently.
+:simplify                  => if true and only one patch, use flat population vector
 ```
 
 #### Default Parameters

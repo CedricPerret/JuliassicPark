@@ -399,21 +399,23 @@ Generates a list of parameter dictionaries by sweeping over combinations of valu
 # Arguments
 - `base`: base parameter dictionary to start from.
 - `sweep`: dictionary of parameters to sweep over. Each value must be a `Vector`.
-- `mode`: `:grid` (default) for full Cartesian product, `:zip` for aligned sweep.
 - `filter`: an optional function that receives a `Dict` and returns `true` if the combination should be included.
 
+# Notes
+- In `parameters`, the key `:sweep_grid` controls the combination strategy:
+  - `:grid` (default) generates the full Cartesian product of all values.
+  - `:zip` aligns values by position (like `zip()` in Julia).
 # Returns
 A vector of `Dict{Symbol,Any}`, one per valid parameter combination.
 """
 function get_parameters_from_sweep(base::Dict, sweep::Dict{Symbol, <:AbstractVector};
-                         mode::Symbol = :grid,
                          filter::Function = x -> true)
     if isempty(sweep)
         return [base], DataFrame()
     end
     sweep_keys = collect(keys(sweep)); sweep_values = collect(values(sweep)); param_dicts = []; sweep_records = [];
 
-    combos = mode == :grid ?
+    combos = parameters[:sweep_grid] ?
         Iterators.product(sweep_values...) :
         zip(sweep_values...)
 
@@ -599,9 +601,10 @@ function _base_default_parameters()
         :parameters_to_omit => String[],
         :additional_parameters_to_omit => Symbol[],
         :split_simul => false,
+        :sweep_grid => true,
         :split_sweep => false,
         :n_simul => 1,
-        :simplify => true,
+        :simplify => true
     )
 end
 
@@ -650,7 +653,7 @@ const PARAMETER_CATEGORIES = [
     "Reproduction settings"   => [:str_selection],
     "Output options"          => [:n_print, :j_print, :de, :other_output_names],
     "File writing"            => [:write_file, :name_model, :parameters_to_omit, :additional_parameters_to_omit],
-    "Simulation control"      => [:n_simul, :split_simul, :split_sweep, :simplify],
+    "Simulation control"      => [:n_simul, :split_simul, :sweep_grid, :split_sweep, :simplify],
 ]
 
 const PARAMETER_DESCRIPTIONS = Dict(
@@ -674,6 +677,7 @@ const PARAMETER_DESCRIPTIONS = Dict(
     :additional_parameters_to_omit => "Additional derived parameters to exclude from output",
     :n_simul      => "Number of independent simulations",
     :split_simul  => "Whether to save each simulation replicate to a separate file. Requires :split_sweep = true. Also controls whether simulation replicates can be parallelised independently.",
+    :sweep_grid => "Whether to use a full Cartesian product (`true`, default) or zip mode (`false`)"
     :split_sweep  => "Whether to save each parameter set to a separate file. Also controls whether parameter sets can be parallelised independently.",
     :simplify     => "Simplify population structure if possible"
 )
@@ -687,6 +691,7 @@ const PARAMETERS_TO_ALWAYS_OMIT = ["other_output_names",
 "additional_parameters_to_omit",
 "write_file",
 "split_simul",
+"sweep_grid",
 "split_sweep",
 "simplify"]
 
