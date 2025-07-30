@@ -415,7 +415,7 @@ function get_parameters_from_sweep(base::Dict, sweep::Dict{Symbol, <:AbstractVec
     end
     sweep_keys = collect(keys(sweep)); sweep_values = collect(values(sweep)); param_dicts = []; sweep_records = [];
 
-    combos = parameters[:sweep_grid] ?
+    combos = base[:sweep_grid] ?
         Iterators.product(sweep_values...) :
         zip(sweep_values...)
 
