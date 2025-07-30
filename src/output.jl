@@ -73,6 +73,31 @@ end
 #*** Saving function
 #-----------------------------------------------
 
+"""
+A macro for optionally computing and printing "extra" values inside a fitness function.
+
+The trick is that all variables assigned in the block are first initialized to `nothing`, so that they are always defined even if not computed. The expressions in the block are only executed if `should_it_print == true`.
+
+!!! warning
+    This macro will overwrite any existing variables of the same name with `nothing` if they are reassigned in the block. Avoid name collisions with earlier code.
+"""
+macro extras(block)
+    # Extract all top-level expressions (may include LineNumberNodes)
+    stmts = block isa Expr && block.head == :block ? block.args : [block]
+    # Keep only assignment expressions like `x = ...`
+    assignments = [stmt for stmt in stmts if stmt isa Expr && stmt.head == :(=)]
+    # Extract the left-hand side variable names from assignmentss
+    vars = [stmt.args[1] for stmt in assignments]
+    # Generate code to define each variable as `nothing`    
+    init = [:( $(esc(var)) = nothing ) for var in vars]
+    # Return full quoted expression: define all vars, then conditionally assign
+    return quote
+        $(init...)   # Always define all variables as `nothing`
+        if $(esc(:should_it_print))
+            $(esc.(stmts)...) # Only evaluate assignments if needed
+        end
+    end
+end
 
 """
     infer_variable_resolution(output::Vector; n_patch::Int = 1)

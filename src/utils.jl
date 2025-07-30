@@ -133,6 +133,14 @@ function vectorize_if(v)
     end
 end
 
+""" 
+To make isempty deal with both population or metapopulation
+"""
+my_isempty(vec::Vector{<:Vector}) = all(isempty, vec)
+my_isempty(vec::Vector) = isempty(vec)
+
+
+
 #-----------------------------------------------
 #*** Mathematical functions
 #-----------------------------------------------

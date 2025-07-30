@@ -43,7 +43,7 @@ Main entry point to run an evolutionary simulation or parameter sweep with user-
     - If `:split_sweep` and `:split_simul` are both `true`, each sweep × simulation is parallelised and saved independently.
     - If no writing is requested and `:n_simul` is large, threads are used to speed up simulation replicates.
 - Trait types (Boolean, Integer, Float) are inferred from `:z_ini` and related fields (`:boundaries`, `:sigma_m`, etc.).
-- Additional statistics returned by `fitness_function` are automatically logged, with names controlled by `:other_output_name`.
+- Additional statistics returned by `fitness_function` are automatically logged, with names controlled by `:other_output_names`.
 """
 
 ## Wrapper (prepare parameters and put default, then call each part)
@@ -85,7 +85,7 @@ function evol_model(parameters_input, fitness_function, repro_function; sweep=Di
     end
 
     ## Generate the model to output (as shown in replicator, it takes parameters and its ID which is i_simul as input)
-    model = get_template_model(parameters_input, fitness_function, repro_function; additional_parameters= additional_parameters, transgen_var_index = transgen_var_index, migration_function = migration_function, genotype_to_phenotype_mapping = genotype_to_phenotype_mapping)
+    model = get_template_model(parameters_input, fitness_function, repro_function; additional_parameters= additional_parameters, migration_function = migration_function, genotype_to_phenotype_mapping = genotype_to_phenotype_mapping)
     
     #--- Run
     ## If no sweep, it gives back a vector containing as single element the parameters
@@ -96,7 +96,7 @@ end
 
 
 """
-    get_template_model(parameters_input, fitness_function, repro_function; additional_parameters=Dict(), transgen_var_index=[], migration_function=nothing, genotype_to_phenotype_mapping=identity)
+    get_template_model(parameters_input, fitness_function, repro_function; additional_parameters=Dict(), migration_function=nothing, genotype_to_phenotype_mapping=identity)
 
 Returns a function that runs a single evolutionary simulation with a fixed set of parameters.
 
@@ -107,7 +107,6 @@ This wrapper assembles all components—initialisation, fitness evaluation, muta
 - `fitness_function::Function`: User-supplied function computing fitness from phenotypes.
 - `repro_function::Function`: Function specifying how reproduction is performed (in-place or return-based).
 - `additional_parameters::Dict`: Derived parameters to be computed at initialisation.
-- `transgen_var_index`: Reserved for future use (not yet implemented).
 - `migration_function::Function`: Optional migration step applied after reproduction.
 - `genotype_to_phenotype_mapping`: Function mapping genotypes to phenotypes (default: `identity`).
 
@@ -124,7 +123,7 @@ A function `model(parameters, i_simul)` that:
 - Only relevant keyword arguments are passed to mutation, reproduction, and migration to ensure flexibility and modularity.
 """
 
-function get_template_model(parameters_input, fitness_function, repro_function; additional_parameters= Dict{Symbol, Function}(), transgen_var_index = [], migration_function = nothing, genotype_to_phenotype_mapping = identity)
+function get_template_model(parameters_input, fitness_function, repro_function; additional_parameters= Dict{Symbol, Function}(), migration_function = nothing, genotype_to_phenotype_mapping = identity)
     model = function(parameters, i_simul)
         #*** Initialisation
         Random.seed!(i_simul)
@@ -149,13 +148,17 @@ function get_template_model(parameters_input, fitness_function, repro_function; 
         parameters,cst_output_name,cst_output = compute_derived_parameters!(parameters,additional_parameters;additional_parameters_to_omit=parameters[:additional_parameters_to_omit])
         #--- Preprocess fitness function
         ## Standardise the output of the fitness function. See preprocess_fitness_function for details.
-        instanced_fitness_function = preprocess_fitness_function(population, fitness_function, parameters,genotype_to_phenotype_mapping)
+        correction = _infer_fitness_function_correction(population,fitness_function, parameters,genotype_to_phenotype_mapping)
+        instanced_fitness_function = preprocess_fitness_function(population, fitness_function, parameters,genotype_to_phenotype_mapping,correction)
+        ## If fitness function returns a named tuple and no other output name specified, we get the names of the additional output.
+        other_output_names = !isempty(parameters[:other_output_names]) ? parameters[:other_output_names] : extract_output_names(population, fitness_function, parameters,genotype_to_phenotype_mapping,correction)
         #--- Initialize the dataframe containing the results and the saving function
         ## This requires a representative sample of an output.  
-        output_example = [[population]; instanced_fitness_function(population; parameters...)]
+        output_example = instanced_fitness_function(population; parameters...)
+        full_output_example = [[population]; instanced_fitness_function(population; parameters...)]
         df_res, saver = init_data_output(
-            only(parameters[:de]), [["z", "fitness"]; parameters[:other_output_name]],
-            output_example, parameters[:n_gen], parameters[:n_print], parameters[:j_print],
+            only(parameters[:de]), [["z", "fitness"]; other_output_names],
+            full_output_example, parameters[:n_gen], parameters[:n_print], parameters[:j_print],
             i_simul, parameters[:n_patch], parameters[:n_ini], parameters[:n_cst];
             output_cst_names=cst_output_name, output_cst=cst_output
         )
@@ -179,10 +182,6 @@ function get_template_model(parameters_input, fitness_function, repro_function; 
             #--- Calculate fitness
             do_print = should_it_print(i_gen, parameters[:n_print], parameters[:j_print])
             output = [[genotype_to_phenotype_mapping(population)]; instanced_fitness_function(population; parameters..., should_it_print=do_print)]
-            #--- Check if all patches became empty 
-            if isempty(output[1])
-                error("Population collapsed")
-            end
             #--- Save
             saver(df_res, i_gen, output)
             #--- Reproduce
@@ -192,6 +191,10 @@ function get_template_model(parameters_input, fitness_function, repro_function; 
             else
                 #->repro_function gives back a new population which needs to be assigned (slower)
                 population = repro_function(population, float.(output[2]), parameters[:str_selection], parameters[:mu_m], mut_kwargs; repro_kwargs...)
+            end
+            #--- Check if all patches became empty 
+            if my_isempty(population)
+                error("Population collapsed")
             end
             #--- Migrate
             if migration_function != nothing
@@ -203,6 +206,23 @@ function get_template_model(parameters_input, fitness_function, repro_function; 
     return model
 end
 
+
+
+
+
+# ## To allow user to define a fitness function which either give back only fitness or fitness and extra variables.
+# function make_safe_output(output)
+#     if output isa Tuple
+#         safe_output = function(output)
+#             return(output)
+#         end
+#     else
+#         safe_output = function(output)
+#             return(output,nothing)
+#         end
+#     end
+#     return(safe_output)
+# end
 
 
 """

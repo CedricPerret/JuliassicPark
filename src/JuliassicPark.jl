@@ -41,6 +41,7 @@ get_default_parameters, print_parameters, print_default_parameters, set_default_
 random_int_except, remove_index, sample_except, create_interval, create_interval_from_size, fill_array_with_missing, 
 curve_plateau,curve_plateau_sublinear, curve_sigmoid, curve_sigmoid_decreasing,
 coef_linear_regression, normalised, random_pairing, random_grouping,
-get_parameters_from_sweep, parameter_sweep_evol_model, get_name_file
+get_parameters_from_sweep, parameter_sweep_evol_model, get_name_file,
+@extras
 
 end

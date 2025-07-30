@@ -28,7 +28,7 @@ Pkg.add(url="https://github.com/CedricPerret/JuliassicPark.git")
 ---
 
 ## 🚀 Quick start
-The main entry point is `evol_model`, which runs a complete evolutionary simulation. To run a simulation, you need to at least define:
+The main entry point is `evol_model`, which runs a complete evolutionary simulation. To run a simulation, you must define at least the following:
 
 1. **Initial trait values** – defines the number and type of traits.
 2. **A fitness function** – defines how trait values affect fitness.
@@ -72,9 +72,9 @@ evol_model(parameters, fitness_function, reproduction_method; kwargs...)
 #### Optional:
 | Argument              | Type                         | Description                                                                 |
 |-----------------------|------------------------------|-----------------------------------------------------------------------------|
-| `additional_parameters`          | `Dict`       | A dictionary of additional parameters to compute at runtime. See [Parameters](#Parameters). |
-| `migration_function`    | `Function`                   | Function describing if and how migration happens after reproduction. Built-in name (e.g. `random_migration`) or custom function.. See [Fitness Function](#Fitness-Function)        |
-| `genotype_to_phenotype_mapping` | `Function`       | Function describing how phenotype is calculated from genotype. Default functions are defined for sexual reproduction. See [Reproduction Function](#Reproduction-Function) |
+| `additional_parameters`          | `Dict`       | A dictionary of additional parameters to compute at runtime. See [Parameters Computed at Runtime](#Parameters-Computed-at-Runtime). |
+| `migration_function`    | `Function`                   | Function describing if and how migration happens after reproduction. Built-in name (e.g. `random_migration`) or custom function. |
+| `genotype_to_phenotype_mapping` | `Function`       | Function describing how phenotype is calculated from genotype. Default functions are defined for sexual reproduction. |
 
 ---
 
@@ -83,10 +83,9 @@ evol_model(parameters, fitness_function, reproduction_method; kwargs...)
 Your custom fitness function should follow this structure:
 
 ```julia
-function my_fitness_function(trait; param1, param2, should_it_print=true, kwargs...)
+function my_fitness_function(trait; param1, param2, kwargs...)
     fitness = ...  # compute fitness
-    extra_var = ...  # optional: only compute if should_it_print == true
-    return fitness, extra_var
+    return fitness
 end
 ```
 
@@ -95,19 +94,28 @@ end
     - To ensure correct dispatch, it is safer to specify the type explicitly (`Number`, `Tuple`, `Matrix`, `Vector`, or `Vector{Vector}`); otherwise, it will be inferred if unambiguous.
 - It **must take any additional parameters as keyword arguments** (after `;`).  
 - It **must return fitness as the first output**. The fitness must match the structure of the input trait (individual, group, or metapopulation).  
-- Any additional outputs (e.g., summary statistics) will be automatically saved. These extra outputs must be compatible with one of the supported output levels: generation-level, patch-level, or individual-level.
-- Include the `should_it_print = true` argument to optionally compute expensive outputs only when needed (e.g., if `j_print >> 1`).
 
-Example:
+#### 🔁 Optional Extra Outputs
+Your fitness function can return additional outputs (e.g. summary statistics), which will be automatically saved. These values must match one of the supported output resolutions: individual-level, patch-level, or generation-level. You can return them as a tuple (`return fitness, extra1, extra2`) or a named tuple `return (; fitness, extra1, extra2)`. If you use a named tuple, output names are taken from the field names. Otherwise, you must provide names using the `:other_output_name` parameter (see [Output](#output)).
+
+#### 🧠 Conditional computation for extras
+If you only save output occasionally (e.g. every 100 generations with `j_print = 100`, see [Parameters](#Parameters)), you can skip computing extra variables at every step. To avoid unnecessary computation:
+1. Include `should_it_print = true` as a keyword argument in the fitness function.
+2. Wrap the optional code in an `@extras` block.
 
 ```julia
-if should_it_print
-    variance_z = var(z)
-    return fitness, variance_z
-else
-    return fitness
+function my_fitness_function(ind; param1, param2, should_it_print = true)
+    fitness = ...  # compute fitness
+    @extras begin
+        extra1 = ...  # only runs if should_it_print == true
+        extra2 = ...
+    end
+    return fitness, extra1, extra2
 end
 ```
+
+!!! warning
+Avoid reusing variable names inside `@extras`. If a variable is already defined before the block, it will be overwritten with `nothing` when skipping computation.
 
 ---
 
@@ -144,7 +152,7 @@ All simulation settings are passed via the `parameter` argument  which is either
 
 #### Optional Model Parameters
 
-```julia
+```
 :n_gen                => number of generations
 :n_print              => first generation to save
 :j_print              => interval between saves
@@ -158,7 +166,7 @@ All simulation settings are passed via the `parameter` argument  which is either
                          'i' = individual
                          'p' = patch
                          'g' = generation
-:other_output_name    => names of extra outputs from fitness function
+:other_output_names => custom names for extra variables returned by the fitness function; overrides field names if a NamedTuple is used
 :write_file           => whether to write output to file
 :name_model           => prefix for output filenames
 :parameters_to_omit   => parameters to exclude from filename
@@ -195,7 +203,10 @@ Each row includes:
 - The trait value(s)  
 - Any additional variables returned by the fitness function
 
-If you do not specify enough names using the `:other_output_name` parameter, unnamed variables from the fitness function are automatically labeled `V1`, `V2`, etc.
+The column names for additional variables in the output follow this order of priority:
+1. If the `:other_output_name` parameter is specified, those names are used.
+2. If the fitness function returns a named tuple, the keys of the tuple are used.
+3. If neither applies or not enough names are provided, the remaining variables are labeled `V1`, `V2`, etc.
 
 If the desired resolution (`:de`) is **higher** than the resolution of the variable (e.g., `:de = 'p'` and the trait is individual-level), the model **averages** the variable. For example, individual trait `z` becomes `mean_z`.
 

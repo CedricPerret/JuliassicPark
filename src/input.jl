@@ -156,7 +156,10 @@ end
 Preprocess a fitness function to handle different levels of input: individual, group of individuals, or metapopulation.
 
 This function adjusts the provided `fitness_function` to ensure it can handle different cases and always returns a consistent output format. 
+It adjusts (i) how it is run e.g. fitness function applies to individual but population is a vector so broadcast + (ii) reorganise the output.
 The goal is to obtain an output that is a vector of size [n_variable] containing a vector of size [n_patch] of vectors of size [n_pop] (in a metapopulation) or a vector of size [n_pop].
+For instance, when the fitness function gives fitness w + 1 output o, applies to an individual and the population is a vector, we want to move from [w_1,o_1],[w_2,o_2] to [w_1,w_2], [o_1, o_2]
+For instance, when the fitness function gives fitness w + 1 output o, applies to an individual and the population is a vector of vector, we want to move from [[w_11,o_11],[w_21,o_21],[[w_12,o_12],[w_22,o_22]] to [[w_11,w_21,w_12,w_22],  [o_11,o_21,o_12,o_22]]
 
 Fitness function output can be an element, or a tuple. This function uses `collect` if the output is a tuple.
 
@@ -170,8 +173,8 @@ Fitness function output can be an element, or a tuple. This function uses `colle
 
 # Examples
 
-```jldoctest
-julia> using DataFrames
+```
+using DataFrames
 
 julia> function gaussian_fitness_function(individual; optimal, sigma)
            fitness = exp(-((individual - optimal)^2) / (2 * sigma^2))
@@ -181,7 +184,7 @@ julia> function gaussian_fitness_function(individual; optimal, sigma)
 
 julia> population = [[0.5, 0.2, 0.1], [1.5, 0.8, 0.95]]
 
-julia> instanced_fitness_function = preprocess_fitness_function(population, gaussian_fitness_function, [:optimal => 1, :sigma => 2])
+julia> instanced_fitness_function = preprocess_fitness_function(population, gaussian_fitness_function, [:optimal => 1, :sigma => 2], identity)
 (Function)
 
 # Using the fitness function directly
@@ -197,11 +200,8 @@ julia> instanced_fitness_function(population; optimal=1, sigma=2)
  [[1.5, 1.2, 1.1], [2.5, 1.8, 1.95]]
 ```
 """
-function preprocess_fitness_function(population, fitness_function,parameters,genotype_to_phenotype_mapping)
-    #--- Try to infer input level from method signature
-    correction = _infer_fitness_function_correction(population,fitness_function, parameters,genotype_to_phenotype_mapping)
-
-    # #--- Define the instanced fitness function
+function preprocess_fitness_function(population, fitness_function,parameters,genotype_to_phenotype_mapping, correction)
+    #--- Define the instanced fitness function
     instanced_fitness_function = nothing
     if correction == 2
             ##If single trait,  vectorize if to put it as the only element of the vector output [o1_ind1,o1_ind2] => [[o1_ind1,o1_ind2]]
@@ -227,6 +227,23 @@ function preprocess_fitness_function(population, fitness_function,parameters,gen
 
     return instanced_fitness_function
 
+end
+
+"""
+    extract_output_names(population, fitness_function, parameters, genotype_to_phenotype_mapping, correction)
+
+Extracts the names of additional outputs from a fitness function if it returns a `NamedTuple`. Only works if the function returns a `NamedTuple`; otherwise returns an empty vector.
+"""
+function extract_output_names(population, fitness_function, parameters, genotype_to_phenotype_mapping,correction)
+    sample_input = correction == 2 ? genotype_to_phenotype_mapping(population[1][1]) :
+                    correction == 1 ? genotype_to_phenotype_mapping(population[1]) :
+                    genotype_to_phenotype_mapping(population)
+    output = fitness_function(sample_input; parameters...)
+    if output isa NamedTuple
+        return [string(k) for k in keys(output)[2:end]]
+    else
+        return String[]
+    end
 end
 
 function _infer_fitness_function_correction(population,fitness_function::Function, parameters,genotype_to_phenotype_mapping)
@@ -576,7 +593,7 @@ function _base_default_parameters()
         :n_print => 1,
         :j_print => 1,
         :de => 'i',
-        :other_output_name => String[],
+        :other_output_names => String[],
         :write_file => false,
         :name_model => "model_",
         :parameters_to_omit => String[],
@@ -631,7 +648,7 @@ const PARAMETER_CATEGORIES = [
     "Demographic settings"    => [:n_gen, :n_ini, :n_patch, :n_loci],
     "Mutation settings"       => [:mu_m, :sigma_m, :bias_m, :boundaries, :mutation_type],
     "Reproduction settings"   => [:str_selection],
-    "Output options"          => [:n_print, :j_print, :de, :other_output_name],
+    "Output options"          => [:n_print, :j_print, :de, :other_output_names],
     "File writing"            => [:write_file, :name_model, :parameters_to_omit, :additional_parameters_to_omit],
     "Simulation control"      => [:n_simul, :split_simul, :split_sweep, :simplify],
 ]
@@ -650,7 +667,7 @@ const PARAMETER_DESCRIPTIONS = Dict(
     :n_print      => "First generation to record output",
     :j_print      => "Interval between outputs",
     :de           => "Data resolution: 'g', 'p', or 'i'",
-    :other_output_name => "Names for additional variables",
+    :other_output_names => "Names for additional variables",
     :write_file   => "Whether to write results to disk",
     :name_model   => "Prefix for output filename",
     :parameters_to_omit => "Parameters excluded from filename",
@@ -661,7 +678,7 @@ const PARAMETER_DESCRIPTIONS = Dict(
     :simplify     => "Simplify population structure if possible"
 )
 
-const PARAMETERS_TO_ALWAYS_OMIT = ["other_output_name",
+const PARAMETERS_TO_ALWAYS_OMIT = ["other_output_names",
 "boundaries",
 "n_cst",
 "distributed",
@@ -672,9 +689,6 @@ const PARAMETERS_TO_ALWAYS_OMIT = ["other_output_name",
 "split_simul",
 "split_sweep",
 "simplify"]
-
-
-
 
 
 # --- Public setter: globally override some defaults

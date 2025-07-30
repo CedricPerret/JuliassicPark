@@ -48,14 +48,14 @@ end
 
 parameters_example = Dict(
     :z_ini => Normal(0.1, 0.1),
-    :n_gen => 2000,
+    :n_gen => 1500,
     :n_ini => 1000,
     :n_patch => 1,
     :str_selection => 1.0,
     :mu_m => 0.005,
     :sigma_m => 0.1,
     :boundaries => [0.0, 1.0],
-    :other_output_name => ["distance_to_optimal"],
+    :other_output_names => ["distance_to_optimal"],
     :write_file => false,
     :parameters_to_omit => ["n_loci", "j_print"],
     :de => 'g',
@@ -63,8 +63,8 @@ parameters_example = Dict(
     :sigma => 1.0
 )
 
-res = evol_model(parameters_example, gaussian_fitness_function, reproduction_WF)
 
+res = evol_model(parameters_example, gaussian_fitness_function, reproduction_WF)
 @with res plot(:gen, :mean_mean_z, ylims = [0, 1])
 @with res plot(:gen, :mean_mean_distance_to_optimal)
 
@@ -73,6 +73,15 @@ parameters_example[:n_gen] = 300
 res = evol_model(parameters_example, gaussian_fitness_function, reproduction_WF)
 @with res plot(:gen, :mean_mean_z, ylims = [0, 1])
 
+## Use Named tuple output to avoid specifying the name of other output.
+function gaussian_fitness_function(z::Number; optimal, sigma, args...)
+    fitness = exp(-(z - optimal)^2 / sigma^2)
+    distance_to_optimal = (z - optimal)^2
+    return (;fitness, distance_to_optimal)
+end
+parameters_example[:other_output_names] = []
+res = evol_model(parameters_example, gaussian_fitness_function, reproduction_WF)
+
 #-----------------------------------------------------------
 #*** 3. Conditional Output with `should_it_print`
 #    Only compute secondary output when necessary (e.g. for performance)
@@ -80,15 +89,15 @@ res = evol_model(parameters_example, gaussian_fitness_function, reproduction_WF)
 
 function gaussian_fitness_function(z; optimal, sigma, should_it_print = true, kwargs...)
     fitness = exp(-(z - optimal)^2 / sigma^2)
-    if should_it_print
+    @extras begin
         distance_to_optimal = (z - optimal)^2
         sleep(0.001)  # Simulate a costly computation
-        return fitness, distance_to_optimal
-    else
-        return fitness
     end
+    return fitness, distance_to_optimal
 end
 
+parameters_example[:n_gen] = 200 
+parameters_example[:n_ini] = 5 
 parameters_example[:j_print] = 1
 @time evol_model(parameters_example, gaussian_fitness_function, reproduction_WF)
 
