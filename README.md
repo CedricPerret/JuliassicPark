@@ -196,7 +196,7 @@ reset_default_parameters!()        # Reset to built-in defaults
 #### Parameter sweep
 
 You can run a parameter sweep by providing a dictionary that specifies which parameters to vary and over which values.  
-All possible combinations are generated automatically (Cartesian product).
+By default, all possible combinations are generated automatically (Cartesian product). Set `sweep_grid = false` to combine values by position.
 
 ```julia
 parameter_sweep = Dict(:sigma => [1.0, 2.0], :mu_m => [0.05, 0.1])
@@ -214,7 +214,7 @@ Output is saved starting from generation `:n_print`, and then every `:j_print` g
 
 Each row includes:
 
-- The simulation ID  
+- The simulation ID (which also serves as the random seed for reproducibility)
 - The patch ID (if `:de = 'p'` or `:de = 'i'`)  
 - The individual ID (if `:de = 'i'`)  
 - The trait value(s)  

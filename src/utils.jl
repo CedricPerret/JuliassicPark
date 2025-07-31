@@ -44,6 +44,18 @@ function remove_index(v::Vector, i::Int)
     deleteat!(copy(v), i)
 end
 
+view_except(v::Vector, i::Int) = [@view v[j] for j in eachindex(v) if j != i]
+
+function vcat_except(v::Vector{<:AbstractVector}, i::Int)
+    if i == 1
+        return reduce(vcat, @view v[2:end])
+    elseif i == length(v)
+        return reduce(vcat, @view v[1:end-1])
+    else
+        return reduce(vcat, (@view v[1:i-1]; @view v[i+1:end]))
+    end
+end
+
 """
     sample_except(list, list_to_except, n_samples)
 

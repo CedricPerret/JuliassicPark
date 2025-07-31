@@ -200,7 +200,7 @@ julia> instanced_fitness_function(population; optimal=1, sigma=2)
  [[1.5, 1.2, 1.1], [2.5, 1.8, 1.95]]
 ```
 """
-function preprocess_fitness_function(population, fitness_function,parameters,genotype_to_phenotype_mapping, correction)
+function preprocess_fitness_function(population, fitness_function,parameters, correction)
     #--- Define the instanced fitness function
     instanced_fitness_function = nothing
     if correction == 2
@@ -208,18 +208,18 @@ function preprocess_fitness_function(population, fitness_function,parameters,gen
             ##If multiple traits,  invert so that we have a vector by output rather by individual [(o1_ind1,o2_ind1),(o1_ind2,o2_ind2)] => ([o1_ind1, o2_ind1], [o2_ind1, o2_ind2])
             ## Same logic at higher level.
             instanced_fitness_function = function(population; parameters...)
-                collect(my_invert([my_invert(vectorize_if(fitness_function.(group; parameters...))) for group in genotype_to_phenotype_mapping(population)]))
+                collect(my_invert([my_invert(vectorize_if(fitness_function.(group; parameters...))) for group in population]))
             end
         elseif correction == 1
             ##If single trait,  vectorize if to put it as the only element of the vector output [o1_ind1,o1_ind2] => [[o1_ind1,o1_ind2]]
             ##If multiple traits,  invert so that we have a vector by output rather by individual [(o1_ind1,o2_ind1),(o1_ind2,o2_ind2)] => ([o1_ind1, o2_ind1], [o2_ind1, o2_ind2])
             instanced_fitness_function = function(population; parameters...)
-                collect(my_invert(vectorize_if(fitness_function.(genotype_to_phenotype_mapping(population); parameters...))))
+                collect(my_invert(vectorize_if(fitness_function.(population; parameters...))))
             end
         elseif correction == 0
             ##If single trait,  vectorize if to put it as the only element of the vector output [o1_ind1,o1_ind2] => [[o1_ind1,o1_ind2]]
             instanced_fitness_function = function(population; parameters...)
-                vectorize_if(collect(fitness_function(genotype_to_phenotype_mapping(population); parameters...)))
+                vectorize_if(collect(fitness_function(population; parameters...)))
             end
         else
             error("Could not infer the correct input type for fitness_function.")
@@ -230,14 +230,14 @@ function preprocess_fitness_function(population, fitness_function,parameters,gen
 end
 
 """
-    extract_output_names(population, fitness_function, parameters, genotype_to_phenotype_mapping, correction)
+    extract_output_names(population, fitness_function, parameters, correction)
 
 Extracts the names of additional outputs from a fitness function if it returns a `NamedTuple`. Only works if the function returns a `NamedTuple`; otherwise returns an empty vector.
 """
-function extract_output_names(population, fitness_function, parameters, genotype_to_phenotype_mapping,correction)
-    sample_input = correction == 2 ? genotype_to_phenotype_mapping(population[1][1]) :
-                    correction == 1 ? genotype_to_phenotype_mapping(population[1]) :
-                    genotype_to_phenotype_mapping(population)
+function extract_output_names(population, fitness_function, parameters,correction)
+    sample_input = correction == 2 ? population[1][1] :
+                    correction == 1 ? population[1] :
+                    population
     output = fitness_function(sample_input; parameters...)
     if output isa NamedTuple
         return [string(k) for k in keys(output)[2:end]]

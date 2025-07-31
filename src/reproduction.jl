@@ -364,12 +364,12 @@ new_pop = reproduction_WF_island_model_hard_selection(pop, fitness, str_selectio
 """
 function reproduction_WF_island_model_hard_selection(pop::Vector{Vector{T}},fitness::Vector{Vector{Float64}},str_selection::Float64,mu_m, mut_kwargs; mig_rate, kwargs...) where T
     group_sizes = length.(pop) ; n_groups = length(pop);
-    migrants=[rand(group_sizes[i]) .< mig_rate for i in 1:n_groups]
+    migrants_flag=[rand(group_sizes[i]) .< mig_rate for i in 1:n_groups]
     new_pop = [Vector{T}(undef, group_sizes[i]) for i in 1:n_groups]
     correct_fitness!(fitness)
     for i in 1:n_groups
-        new_pop[i][migrants[i]] .= safe_sample(reduce(vcat,(remove_index(pop,i))),StatsBase.Weights(reduce(vcat,(remove_index(fitness,i)))),sum(migrants[i]))
-        new_pop[i][.!(migrants[i])] .= safe_sample(pop[i],StatsBase.Weights(fitness[i]),sum(.!(migrants[i])))
+        new_pop[i][migrants_flag[i]] .= safe_sample(vcat_except(pop,i), StatsBase.Weights(vcat_except(fitness,i)), count(migrants_flag[i]))
+        new_pop[i][.!(migrants_flag[i])] .= safe_sample(pop[i], StatsBase.Weights(fitness[i]), count(.!migrants_flag[i]))
         mutation!(new_pop[i],mu_m;mut_kwargs...)
     end
     return(new_pop)

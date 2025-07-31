@@ -149,16 +149,15 @@ function get_template_model(parameters_input, fitness_function, repro_function; 
         #--- Preprocess fitness function
         ## Standardise the output of the fitness function. See preprocess_fitness_function for details.
         correction = _infer_fitness_function_correction(population,fitness_function, parameters,genotype_to_phenotype_mapping)
-        instanced_fitness_function = preprocess_fitness_function(population, fitness_function, parameters,genotype_to_phenotype_mapping,correction)
+        population_phenotype = genotype_to_phenotype_mapping(population)
+        instanced_fitness_function = preprocess_fitness_function(population_phenotype, fitness_function, parameters,correction)
         ## If fitness function returns a named tuple and no other output name specified, we get the names of the additional output.
         other_output_names = !isempty(parameters[:other_output_names]) ? parameters[:other_output_names] : extract_output_names(population, fitness_function, parameters,genotype_to_phenotype_mapping,correction)
         #--- Initialize the dataframe containing the results and the saving function
-        ## This requires a representative sample of an output.  
-        output_example = instanced_fitness_function(population; parameters...)
-        full_output_example = [[population]; instanced_fitness_function(population; parameters...)]
+        output = [[population_phenotype]; instanced_fitness_function(population_phenotype; parameters...)]
         df_res, saver = init_data_output(
             only(parameters[:de]), [["z", "fitness"]; other_output_names],
-            full_output_example, parameters[:n_gen], parameters[:n_print], parameters[:j_print],
+            output, parameters[:n_gen], parameters[:n_print], parameters[:j_print],
             i_simul, parameters[:n_patch], parameters[:n_ini], parameters[:n_cst];
             output_cst_names=cst_output_name, output_cst=cst_output
         )
@@ -180,8 +179,11 @@ function get_template_model(parameters_input, fitness_function, repro_function; 
         #*** Run simulations
         for i_gen in 1:parameters[:n_gen]
             #--- Calculate fitness
-            do_print = should_it_print(i_gen, parameters[:n_print], parameters[:j_print])
-            output = [[genotype_to_phenotype_mapping(population)]; instanced_fitness_function(population; parameters..., should_it_print=do_print)]
+            population_phenotype = genotype_to_phenotype_mapping(population)
+            output = [[population_phenotype]; instanced_fitness_function(population_phenotype; parameters..., 
+            should_it_print=should_it_print(i_gen, parameters[:n_print], parameters[:j_print]))
+            ]
+
             #--- Save
             saver(df_res, i_gen, output)
             #--- Reproduce
@@ -248,7 +250,8 @@ function run_parameter_sweep_distributed(fun, sweep, parameters)
         # -> No parallel write, accumulate everything
         #--- Generate data
         list_res = Vector{DataFrame}(undef, n)
-         p = Progress(parameters[:n_simul] * n, 1)
+        p = Progress(parameters[:n_simul] * n, 1)
+        update!(p, 0)  # <-- Forces the bar to show immediately
         if Threads.nthreads() == 1 || parameters[:n_simul] < 10 || parameters[:de] =='i'
             #-> Small enough or take too much memory to paralelise over threads.
             for i in 1:n
