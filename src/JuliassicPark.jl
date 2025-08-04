@@ -28,7 +28,7 @@ using ProgressMeter
 export evol_model, simple_evol_model, 
 mutation, mutation!, get_mutation_distribution,
 list_reproduction_methods,
-reproduction_WF, reproduction_Moran_DB!, reproduction_Moran_BD!, reproduction_Moran_pairwise_learning!,
+reproduction_WF, reproduction_WF!, reproduction_Moran_DB!, reproduction_Moran_BD!, reproduction_Moran_pairwise_learning!,
 reproduction_WF_copy_group_trait, 
 reproduction_WF_island_model_hard_selection, reproduction_WF_island_model_soft_selection,
 reproduction_explicit_poisson,
@@ -41,7 +41,7 @@ get_default_parameters, print_parameters, print_default_parameters, set_default_
 random_int_except, remove_index, sample_except, create_interval, create_interval_from_size, fill_array_with_missing, 
 curve_plateau,curve_plateau_sublinear, curve_sigmoid, curve_sigmoid_decreasing,
 coef_linear_regression, normalised, random_pairing, random_grouping,
-get_parameters_from_sweep, parameter_sweep_evol_model, get_name_file,
+get_parameters_from_sweep, parameter_sweep_evol_model, get_name_file,reproduction_WF_island_model_sparse,
 @extras
 
 end

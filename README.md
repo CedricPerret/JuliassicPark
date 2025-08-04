@@ -251,12 +251,20 @@ Formatting conventions:
 
 ### 🧵 Parallelisation and Output Splitting
 
-To control how simulations are parallelised and how results are written to disk, use the parameters `:split_simul` and `:split_sweep`:
+The behavior of parallelisation and output formatting depends on two flags: `:write_file` and `:split_sweep`.
+
+- If `:write_file = false`:
+  - If `:split_sweep = false`, all results are combined into a single `DataFrame` (in memory).
+  - If `:split_sweep = true`, results are returned as a **vector of `DataFrame`s**, one per parameter set.
+  - The `:split_simul` flag is ignored in this case.
+
+- If `:write_file = true`, the `:split_sweep` and `:split_simul` flags control how results are saved to disk and how simulations are parallelised, as shown in the table below.
+
 
 | `:split_sweep` | `:split_simul` | Behaviour |
 |----------------|----------------|-----------|
 | `false`        | `false`        | All simulations and parameter sets are combined into a single `DataFrame` (or CSV file). When the number of simulations is high and memory usage is low (`de ≠ i`), runs are parallelized across threads. This mode is the safest and most memory-efficient option for small to medium jobs. |
-| `true`         | `false`        | Results from each parameter set are saved in a **separate file**. Simulations for a given set are run sequentially and written together. This parallelises over parameter sets. |
+| `true`         | `false`        | Results from each parameter set are saved in a **separate file**. Simulations for a given set are run sequentially and written together. This parallelises over parameter sets when writing to file, and not otherwise.  |
 | `true`         | `true`         | Each simulation of each parameter set is saved in its **own file**. This allows **full parallelisation** over both parameter sets and simulations. This is the most scalable option for long or numerous runs. |
 | `false`        | `true`         | ❌ Not allowed. Each simulation would write to the same file, creating a conflict. An error is thrown if this configuration is used. |
 

@@ -124,9 +124,11 @@ A function `model(parameters, i_simul)` that:
 """
 
 function get_template_model(parameters_input, fitness_function, repro_function; additional_parameters= Dict{Symbol, Function}(), migration_function = nothing, genotype_to_phenotype_mapping = identity)
-    model = function(parameters, i_simul)
+    model = function(parameters_input, i_simul)
         #*** Initialisation
         Random.seed!(i_simul)
+
+        parameters = deepcopy(parameters_input)
 
         #--- This is in case the user gives a single generator, not encapsulated in a vector because the expected input is a vector of generators for each trait. 
         if contains(give_me_my_name(repro_function), "sexual") && genotype_to_phenotype_mapping == identity
@@ -144,6 +146,16 @@ function get_template_model(parameters_input, fitness_function, repro_function; 
 
         #--- Initialise the population 
         population = initialise_population(parameters[:z_ini], parameters[:n_ini], parameters[:n_patch]; boundaries = parameters[:boundaries], simplify = parameters[:simplify],n_loci = parameters[:n_loci])
+        #--- Initialise type of reproduction
+        reproduction_mode = :pure
+        new_population = similar(population)
+        if contains(give_me_my_name(repro_function), "!")
+            if contains(give_me_my_name(repro_function), "WF")
+                reproduction_mode = :inplace_double
+            else
+                reproduction_mode = :inplace_single
+            end
+        end
         #--- Initialise second parameters which need to be derived from the given parameters (which can be directly printed)
         parameters,cst_output_name,cst_output = compute_derived_parameters!(parameters,additional_parameters;additional_parameters_to_omit=parameters[:additional_parameters_to_omit])
         #--- Preprocess fitness function
@@ -152,7 +164,7 @@ function get_template_model(parameters_input, fitness_function, repro_function; 
         population_phenotype = genotype_to_phenotype_mapping(population)
         instanced_fitness_function = preprocess_fitness_function(population_phenotype, fitness_function, parameters,correction)
         ## If fitness function returns a named tuple and no other output name specified, we get the names of the additional output.
-        other_output_names = !isempty(parameters[:other_output_names]) ? parameters[:other_output_names] : extract_output_names(population, fitness_function, parameters,genotype_to_phenotype_mapping,correction)
+        other_output_names = !isempty(parameters[:other_output_names]) ? parameters[:other_output_names] : extract_output_names(population, fitness_function, parameters,correction)
         #--- Initialize the dataframe containing the results and the saving function
         output = [[population_phenotype]; instanced_fitness_function(population_phenotype; parameters...)]
         df_res, saver = init_data_output(
@@ -187,12 +199,16 @@ function get_template_model(parameters_input, fitness_function, repro_function; 
             #--- Save
             saver(df_res, i_gen, output)
             #--- Reproduce
-            if contains(give_me_my_name(repro_function), "!")
-                #->repro_function is in-place (faster)
-                repro_function(population, float.(output[2]), parameters[:str_selection], parameters[:mu_m], mut_kwargs; repro_kwargs...)
-            else
+            if reproduction_mode == :pure
                 #->repro_function gives back a new population which needs to be assigned (slower)
                 population = repro_function(population, float.(output[2]), parameters[:str_selection], parameters[:mu_m], mut_kwargs; repro_kwargs...)
+            elseif reproduction_mode == :inplace_single
+                #->repro_function is in-place (faster)
+                repro_function(population, float.(output[2]), parameters[:str_selection], parameters[:mu_m], mut_kwargs; repro_kwargs...)
+            elseif reproduction_mode == :inplace_double
+                #->repro_function is in-place (faster)
+                repro_function(population, new_population,float.(output[2]), parameters[:str_selection], parameters[:mu_m], mut_kwargs; repro_kwargs...)
+                population, new_population = new_population, population 
             end
             #--- Check if all patches became empty 
             if my_isempty(population)
@@ -235,13 +251,15 @@ Handles different parallelisation strategies based on user-specified flags such 
 - Throws an error if `:split_simul=true` but `:split_sweep=false`, as this may lead to file name conflicts.
 
 # Notes
-- Output filenames are generated using `get_name_file(...)`, optionally summarising swept parameter values.
+- Output filenames are generated using `build_filepath(...)`, optionally summarising swept parameter values.
 - Uses progress bars and thread-local buffers for efficient aggregation under multi-threading.
 """
 function run_parameter_sweep_distributed(fun, sweep, parameters)
     list_parameters_set, sweep_df = get_parameters_from_sweep(parameters, sweep)
     ##function to calculate a random seed
     n = length(list_parameters_set)
+    total = n*parameters[:n_simul]
+    p = Progress(total, 1)
     if parameters[:split_simul] && !parameters[:split_sweep] && !isempty(sweep)
         error("split_simul=true requires split_sweep=true to avoid file conflicts or ambiguity.")
     end
@@ -250,7 +268,6 @@ function run_parameter_sweep_distributed(fun, sweep, parameters)
         # -> No parallel write, accumulate everything
         #--- Generate data
         list_res = Vector{DataFrame}(undef, n)
-        p = Progress(parameters[:n_simul] * n, 1)
         update!(p, 0)  # <-- Forces the bar to show immediately
         if Threads.nthreads() == 1 || parameters[:n_simul] < 10 || parameters[:de] =='i'
             #-> Small enough or take too much memory to paralelise over threads.
@@ -298,7 +315,7 @@ function run_parameter_sweep_distributed(fun, sweep, parameters)
         ## Then either write the whole or give it back
         if parameters[:write_file]
             #-> Concatenate and save
-            CSV.write(get_name_file(parameters[:name_model], parameters, parameters[:parameters_to_omit], ".csv"; swept=sweep), vcat(list_res...))
+            CSV.write(build_filepath(parameters[:name_model], parameters, parameters[:parameters_to_omit], ".csv"; swept=sweep), vcat(list_res...))
             return nothing
         elseif parameters[:split_sweep]
             return list_res
@@ -316,7 +333,7 @@ function run_parameter_sweep_distributed(fun, sweep, parameters)
                         id_simul = get_simulation_seed(parameters, i_simul)
                         res = fun(list_parameters_set[i], id_simul)
                         ## We add id_simul to the name of the file
-                        CSV.write(get_name_file(parameters[:name_model], list_parameters_set[i], parameters[:parameters_to_omit], ".csv", id_simul), res)
+                        CSV.write(build_filepath(parameters[:name_model], list_parameters_set[i], parameters[:parameters_to_omit], ".csv", id_simul), res)
                     end
                 end
             end
@@ -330,10 +347,38 @@ function run_parameter_sweep_distributed(fun, sweep, parameters)
                     res = fun(list_parameters_set[i], id_simul)
                     append!(df_res, res)
                 end
-                CSV.write(get_name_file(parameters[:name_model], list_parameters_set[i], parameters[:parameters_to_omit], ".csv"), df_res)
+                CSV.write(build_filepath(parameters[:name_model], list_parameters_set[i], parameters[:parameters_to_omit], ".csv"), df_res)
             end
         end
-        return nothing
+        #I don't know why it is super slow 
+        #         elseif parameters[:split_sweep]
+        # # -> Parallelise only over parameter sets
+        #     channel = RemoteChannel(() -> Channel{Bool}(), 1)
+        #     @sync begin
+        #         @async while take!(channel)
+        #             next!(p)
+        #         end
+        #         @async begin
+        #             @distributed (+) for i in 1:n_steps
+        #                 df_res = DataFrame()
+        #                 for i_simul in 1:parameters[:n_simul]
+        #                     id_simul = get_simulation_seed(parameters, i_simul)
+        #                     res = fun(list_parameters_set[i], id_simul)
+        #                     append!(df_res, res)
+        #                 end
+        #                 CSV.write(build_filepath(parameters[:name_model], list_parameters_set[i], parameters[:parameters_to_omit], ".csv"), df_res)
+        #                 put!(channel, true)
+        #                 0
+        #             end
+        #             put!(channel, false) # this tells the printing task to finish
+        #         end
+        #     end
+        # end
+    
+
+    return nothing
+
+
     end
 end
 

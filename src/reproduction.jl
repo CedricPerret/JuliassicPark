@@ -18,6 +18,7 @@ function list_reproduction_methods()
     println("  reproduction_Moran_pairwise_learning! — Pairwise comparison imitation dynamics (in-place)")
 
     println("  reproduction_WF                     — Wright–Fisher reproduction (asexual)")
+    println("  reproduction_WF!                     — Wright–Fisher reproduction in-place (asexual)")
     println("  reproduction_WF_copy_group_trait    — Group-level trait copying based on group fitness")
     println("  reproduction_WF_island_model_hard_selection — Reproduction with migration and global competition")
     println("  reproduction_WF_island_model_soft_selection — Reproduction with migration and local competition")
@@ -274,8 +275,6 @@ function reproduction_WF(pop::Vector{T},fitness::Vector{Float64},str_selection::
     return(offspring_pop)
 end
 
-
-
 #--- Wright–Fisher: metapopulation (vector of vectors)
 function reproduction_WF(pop::Vector{Vector{T}},fitness::Vector{Vector{Float64}},str_selection::Float64,mu_m,mut_kwargs; kwargs...) where T
     #@ Reduce faster than Iterators.flatten
@@ -284,6 +283,13 @@ function reproduction_WF(pop::Vector{Vector{T}},fitness::Vector{Vector{Float64}}
     #---2. Redistribute the pooled population into patches
     #@ Iterators.partition faster than own partition. 
     population = [collect(part) for part in Iterators.partition(metapopulation, length(pop[1]))]
+end
+
+#--- Wright–Fisher: in-place and single population (vector)
+function reproduction_WF!(pop::Vector{T},new_pop::Vector{T},fitness::Vector{Float64},str_selection::Float64,mu_m,mut_kwargs; kwargs...)where T
+    correct_fitness!(fitness)
+    sample!(pop,Weights(fitness.^str_selection),new_pop)
+    mutation!(new_pop,mu_m;mut_kwargs...)
 end
 
 
@@ -364,16 +370,23 @@ new_pop = reproduction_WF_island_model_hard_selection(pop, fitness, str_selectio
 """
 function reproduction_WF_island_model_hard_selection(pop::Vector{Vector{T}},fitness::Vector{Vector{Float64}},str_selection::Float64,mu_m, mut_kwargs; mig_rate, kwargs...) where T
     group_sizes = length.(pop) ; n_groups = length(pop);
+    if all(group_sizes .== 1)
+        #-> avoid to flatten. It is particulary slow when many small patches
+        return(reproduction_WF(pop,fitness,str_selection,mu_m, mut_kwargs; mig_rate, kwargs...))
+    end
     migrants_flag=[rand(group_sizes[i]) .< mig_rate for i in 1:n_groups]
     new_pop = [Vector{T}(undef, group_sizes[i]) for i in 1:n_groups]
     correct_fitness!(fitness)
     for i in 1:n_groups
+        #@ It is weirdly faster to flatten even if we have many small patches, than to draw an index and then map it on the vector of vector (see dev)
         new_pop[i][migrants_flag[i]] .= safe_sample(vcat_except(pop,i), StatsBase.Weights(vcat_except(fitness,i)), count(migrants_flag[i]))
         new_pop[i][.!(migrants_flag[i])] .= safe_sample(pop[i], StatsBase.Weights(fitness[i]), count(.!migrants_flag[i]))
         mutation!(new_pop[i],mu_m;mut_kwargs...)
     end
     return(new_pop)
 end
+
+
 
 
 """

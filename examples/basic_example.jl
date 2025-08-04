@@ -49,7 +49,7 @@ end
 parameters_example = Dict(
     :z_ini => Normal(0.1, 0.1),
     :n_gen => 1500,
-    :n_ini => 1000,
+    :n_ini => 10000,
     :n_patch => 1,
     :str_selection => 1.0,
     :mu_m => 0.005,
@@ -65,6 +65,10 @@ parameters_example = Dict(
 
 
 res = evol_model(parameters_example, gaussian_fitness_function, reproduction_WF)
+@with res plot(:gen, :mean_mean_z, ylims = [0, 1])
+@with res plot(:gen, :mean_mean_distance_to_optimal)
+
+res = evol_model(parameters_example, gaussian_fitness_function, reproduction_WF!)
 @with res plot(:gen, :mean_mean_z, ylims = [0, 1])
 @with res plot(:gen, :mean_mean_distance_to_optimal)
 
