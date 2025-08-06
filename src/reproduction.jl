@@ -292,6 +292,11 @@ function reproduction_WF!(pop::Vector{T},new_pop::Vector{T},fitness::Vector{Floa
     mutation!(new_pop,mu_m;mut_kwargs...)
 end
 
+#--- Wright–Fisher: in-place and metapopulation (vector of vectors)
+function reproduction_WF!(pop::Vector{Vector{T}},new_pop::Vector{Vector{T}},fitness::Vector{Vector{Float64}},str_selection::Float64,mu_m,mut_kwargs; kwargs...) where T
+    error("In-place reproduction for Wright–Fisher is not defined")
+end
+
 
 #--- Internal: Wright–Fisher reproduction independently in each patch
 #! Not exported — used when reproduction occurs locally within each subpopulation

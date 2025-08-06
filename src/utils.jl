@@ -83,8 +83,47 @@ end
 
 
 #-----------------------------------------------
-#*** Generate and manipulate vectors
+#*** Generate vectors
 #-----------------------------------------------
+
+##useful for quick test
+empty_metapop() = empty_metapop(Float64)
+
+"""
+    empty_vv(; T=Float64, n_patch=2, n_ind=3)
+
+Creates a `Vector{Vector{T}}` of shape `[outer][inner]` with uninitialized values of type `T`.
+"""
+function vv_empty(; T=Float64, n_patch=2, n_ind=3)
+    [Vector{T}(undef, n_ind) for _ in 1:n_patch]
+end
+
+"""
+    vv(x, n_patch=2, n_ind=3)
+
+Creates a `Vector{Vector}` filled with value `x` of shape `[outer][inner]`.
+"""
+## We do not use fill because it is not safe for mutable element
+function vv(x, n_patch::Int=2, n_ind::Int=3)
+    [ [copy(x) for _ in 1:n_ind] for _ in 1:n_patch ]
+end
+function vv(x, population::Vector{<:AbstractVector})
+    [[copy(x) for _ in 1:length(population[patch])] for patch in 1:length(population)]
+end
+
+vv() = vv_rand(2, 3)
+
+"""
+    rand_vv(n_patch=2, n_ind=3)
+
+Creates a `Vector{Vector{Float64}}` with random values.
+"""
+function vv_rand(n_patch::Int=2, n_ind::Int=3)
+    [rand(n_ind) for _ in 1:n_patch]
+end
+
+vv_big() = vv_rand(50, 300)
+
 
 """
     create_interval(split_positions::Vector{Int})
@@ -118,6 +157,102 @@ function fill_array_with_missing(array, position, size)
     end
 end
 
+""" 
+To make isempty deal with both population or metapopulation
+"""
+my_isempty(vec::Vector{<:Vector}) = all(isempty, vec)
+my_isempty(vec::Vector) = isempty(vec)
+
+
+#-----------------------------------------------
+#*** Manipulate vectors
+#-----------------------------------------------
+
+"""
+    invert_3D(vvv::Vector{Vector{Vector{T}}}) -> Vector{Vector{Vector{T}}}
+
+Reorganizes a nested structure from `[variable][patch][individual]` to `[patch][individual][variable]`. 
+Supports different numbers of individuals per patch.
+
+Applying `invert_3D` twice returns the original structure:
+`invert_3D(invert_3D(vvv)) == vvv`
+"""
+function invert_3D(vvv::Vector{Vector{Vector{T}}}) where T
+    V = length(vvv)
+    P = length(vvv[1])
+    [[[vvv[v][p][n] for v in 1:V] for n in 1:length(vvv[1][p])] for p in 1:P]
+end
+
+
+
+"""
+    invert_3D_map(f, vvv)
+    invert_3D_map(f, vvv, patch_args)
+    invert_3D_map(f, vvv, patch_args, global_args)
+
+Apply `f` to the vector of variables for each individual in each patch. Useful for cases when argument is a vector of unknown size.
+
+We store variables as [variable][patch][individual] (instead of [patch][individual][variable]) 
+because this matches how variables are naturally organized in the code: 
+each variable is typically a distinct element, represented as a vector of patches, where each patch holds a vector of individuals.
+    
+Input `vvv` is a nested structure: `[variable][patch][individual]`.  
+This allows individuals in different patches to vary in size.  
+The different method variants allow for passing:
+- patch-level arguments (structured as `[variable][patch]`),
+- global arguments shared across all calls.
+
+Returns a nested structure `[patch][individual]` with the result of `f` at each position.
+
+### Example
+
+```julia
+vvv = [
+    [ [1.0, 2.0, 3.0], [3.0, 4.0], [5.0, 6.0] ],   # variable 1
+    [ [7.0, 8.0, 5.0], [9.0, 10.0], [11.0, 12.0] ] # variable 2
+]
+
+prices = [
+    [1.0, 2.0, 3.0],   # prices for variable 1 across 3 patches
+    [0.5, 1.5, 2.5]    # prices for variable 2 across 3 patches
+]
+
+alpha = [0.4, 0.6]
+
+output1 = invert_3D_map(sum, vvv)
+output2 = invert_3D_map(calculate_consumption, vvv, prices, alpha)
+output3 = invert_3D_map(calculate_consumption, vvv, (prices,), (alpha,))
+"""
+function invert_3D_map(f,vvv::Vector{Vector{Vector{T}}}) where T
+    V = length(vvv)             # number of variables
+    P = length(vvv[1])          # number of populations
+    [[f([vvv[v][p][n] for v in 1:V]) for n in 1:length(vvv[1][p]) ] for p in 1:P]
+end
+##--- A single additional input at patch resolution
+function invert_3D_map(f,vvv::Vector{Vector{Vector{T}}}, vv::Vector{Vector{U}}) where {T, U}
+    V = length(vvv)             # number of variables
+    P = length(vvv[1])          # number of populations
+    invert_vv = invert(vv)
+    [[f([vvv[v][p][n] for v in 1:V],invert_vv[p]) for n in 1:length(vvv[1][p]) ] for p in 1:P]
+end
+
+##--- A single additional input at patch resolution + A single global input
+function invert_3D_map(f,vvv::Vector{Vector{Vector{T}}}, vv::Vector{Vector{U}}, global_args) where {T, U}
+    V = length(vvv)             # number of variables
+    P = length(vvv[1])          # number of populations
+    invert_vv = invert(vv)
+    [[f([vvv[v][p][n] for v in 1:V],invert_vv[p],global_args) for n in 1:length(vvv[1][p]) ] for p in 1:P]
+end
+
+#--- Any additional input at patch and global resolution
+function invert_3D_map(f::Function, vvv::Vector{Vector{Vector{T}}}, patch_args::Tuple, global_args::Tuple = ()) where T
+    V = length(vvv)
+    P = length(vvv[1])
+    inverted_args = invert.(patch_args)
+    [[ f([vvv[v][p][n] for v in 1:V], map(a -> a[p], inverted_args)..., global_args...) for n in 1:length(vvv[1][p]) ] for p in 1:P ]
+end
+
+
 """
     my_invert(v)
 
@@ -144,13 +279,6 @@ function vectorize_if(v)
         v
     end
 end
-
-""" 
-To make isempty deal with both population or metapopulation
-"""
-my_isempty(vec::Vector{<:Vector}) = all(isempty, vec)
-my_isempty(vec::Vector) = isempty(vec)
-
 
 
 #-----------------------------------------------

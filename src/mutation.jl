@@ -46,6 +46,7 @@ mutation(true, 0.5)                                                            #
 function _trait_type_error(x, mu)
     error("No mutation defined for trait of type $(typeof(x))")
 end
+
 mutation(x, mu_m; kwargs...) = _trait_type_error(x, mu_m)
 
 #--- Boolean traits
