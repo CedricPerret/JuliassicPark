@@ -143,6 +143,8 @@ function get_template_model(parameters_input, fitness_function, repro_function; 
                 genotype_to_phenotype_mapping = x -> additive_mapping(x,parameters[:delta])
             end
         end
+        calculate_phenotype = pop -> _lift_map(genotype_to_phenotype_mapping, pop)
+
 
         #--- Initialise the population 
         population = initialise_population(parameters[:z_ini], parameters[:n_ini], parameters[:n_patch]; boundaries = parameters[:boundaries], simplify = parameters[:simplify],n_loci = parameters[:n_loci])
@@ -160,11 +162,11 @@ function get_template_model(parameters_input, fitness_function, repro_function; 
         parameters,cst_output_name,cst_output = compute_derived_parameters!(parameters,additional_parameters;additional_parameters_to_omit=parameters[:additional_parameters_to_omit])
         #--- Preprocess fitness function
         ## Standardise the output of the fitness function. See preprocess_fitness_function for details.
-        correction = _infer_fitness_function_correction(population,fitness_function, parameters,genotype_to_phenotype_mapping)
-        population_phenotype = genotype_to_phenotype_mapping(population)
+        correction = _infer_fitness_function_correction(population,fitness_function, parameters,calculate_phenotype)
+        population_phenotype = calculate_phenotype(population)
         instanced_fitness_function = preprocess_fitness_function(population_phenotype, fitness_function, parameters,correction)
         ## If fitness function returns a named tuple and no other output name specified, we get the names of the additional output.
-        other_output_names = !isempty(parameters[:other_output_names]) ? parameters[:other_output_names] : extract_output_names(population, fitness_function, parameters,correction)
+        other_output_names = !isempty(parameters[:other_output_names]) ? parameters[:other_output_names] : extract_output_names(population_phenotype, fitness_function, parameters,correction)
         #--- Initialize the dataframe containing the results and the saving function
         output = [[population_phenotype]; instanced_fitness_function(population_phenotype; parameters...)]
         df_res, saver = init_data_output(
@@ -191,7 +193,7 @@ function get_template_model(parameters_input, fitness_function, repro_function; 
         #*** Run simulations
         for i_gen in 1:parameters[:n_gen]
             #--- Calculate fitness
-            population_phenotype = genotype_to_phenotype_mapping(population)
+            population_phenotype = calculate_phenotype(population)
             output = [[population_phenotype]; instanced_fitness_function(population_phenotype; parameters..., 
             should_it_print=should_it_print(i_gen, parameters[:n_print], parameters[:j_print]))
             ]

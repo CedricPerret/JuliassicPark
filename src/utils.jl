@@ -423,3 +423,12 @@ function my_allequal(itr)
 end
 
 
+# Lift an individual-level mapper `f` to vectors and vectors-of-vectors.
+# Works for arbitrary nesting depth of AbstractVector.
+
+@inline _lift_map(f, pop::AbstractVector) = map(f, pop)
+@inline _lift_map(f, pop::AbstractVector{<:AbstractVector}) = map(p -> _lift_map(f, p), pop)
+
+# Micro-optimization when f === identity (skip calls, just copy)
+@inline _lift_map(::typeof(identity), pop::AbstractVector) = copy(pop)
+@inline _lift_map(::typeof(identity), pop::AbstractVector{<:AbstractVector}) = map(copy, pop)
