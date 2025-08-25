@@ -63,6 +63,7 @@ parameters_example = Dict(
     :sigma => 1.0
 )
 
+res = evol_model(parameters_example, gaussian_fitness_function, reproduction_WF)
 
 res = evol_model(parameters_example, gaussian_fitness_function, reproduction_WF)
 @with res plot(:gen, :mean_mean_z, ylims = [0, 1])
@@ -83,8 +84,10 @@ function gaussian_fitness_function(z::Number; optimal, sigma, args...)
     distance_to_optimal = (z - optimal)^2
     return (;fitness, distance_to_optimal)
 end
+
 parameters_example[:other_output_names] = []
 res = evol_model(parameters_example, gaussian_fitness_function, reproduction_WF)
+
 
 #-----------------------------------------------------------
 #*** 3. Conditional Output with `should_it_print`
@@ -176,7 +179,8 @@ end
 
 parameters_example = (z_ini = [true,false], mu_m = 0.001,
 n_gen = 100, n_ini = 50,n_patch=100, de = 'g', n_simul = 100, 
-a=2,c=1, threshold = 0.65)
+a=2,c=1., threshold = 0.65)
+
 res=evol_model(parameters_example,threshold_public_good_game,reproduction_WF)
 
 #--- Results: Two equilibria. Some simulations converge toward enough cooperators, others to full defection
@@ -402,3 +406,109 @@ res = evol_model(parameters_example, disruptive_fitness, reproduction_WF)
 parameters_example[:n_loci] = 1
 res_sexual = evol_model(parameters_example, disruptive_fitness, reproduction_WF_sexual)
 @with res_sexual scatter(:gen, :z,  legend = false)
+
+
+#-----------------------------------------------
+#*** Performance tips: in-place fitness function
+# Demonstrates how to use in-place fitness function
+#-----------------------------------------------
+
+function gaussian_fitness_function!(z::Vector{Float64}, fitness; optimal, sigma, args...)
+    for i in 1:length(z)
+        fitness[i] = exp(-(z[i] - optimal)^2 / sigma^2)
+    end
+    distance_to_optimal = (z .- optimal).^2
+    return distance_to_optimal
+end
+
+parameters_example = Dict(
+    :z_ini => Normal(0.1, 0.1),
+    :n_gen => 3000,
+    :n_ini => 10000,
+    :n_patch => 1,
+    :str_selection => 1.0,
+    :mu_m => 0.005,
+    :sigma_m => 0.1,
+    :boundaries => [0.0, 1.0],
+    :other_output_names => ["distance_to_optimal"],
+    :write_file => false,
+    :parameters_to_omit => ["n_loci", "j_print"],
+    :de => 'g',
+    :optimal => 0.5,
+    :sigma => 1.0
+)
+
+res = evol_model(parameters_example, gaussian_fitness_function!, reproduction_WF);
+
+function gaussian_fitness_function(z::Number; optimal, sigma, args...)
+    fitness = exp(-(z - optimal)^2 / sigma^2)
+    distance_to_optimal = (z - optimal)^2
+    return fitness, distance_to_optimal
+end
+
+function gaussian_fitness_function_pop(z::Vector{Float64}; optimal, sigma, args...)
+    fitness = exp.(.- (z .- optimal).^2 / sigma^2)
+    distance_to_optimal = (z .- optimal).^2
+    return fitness, distance_to_optimal
+end
+
+
+#@ Performance comparison. 
+@btime res = evol_model(parameters_example, gaussian_fitness_function, reproduction_WF);
+@with res plot(:gen, :mean_mean_z, ylims = [0, 1])
+@btime res = evol_model(parameters_example, gaussian_fitness_function_pop, reproduction_WF);
+@with res plot(:gen, :mean_mean_z, ylims = [0, 1])
+@btime res = evol_model(parameters_example, gaussian_fitness_function!, reproduction_WF);
+@with res plot(:gen, :mean_mean_z, ylims = [0, 1])
+
+
+
+##In case you don't have any extras
+function gaussian_fitness_function!(z::Vector{Float64}, fitness; optimal, sigma, args...)
+    for i in 1:length(z)
+        fitness[i] = exp(-(z[i] - optimal)^2 / sigma^2)
+    end
+    distance_to_optimal = (z .- optimal).^2
+    return nothing
+end
+
+res = evol_model(parameters_example, gaussian_fitness_function!, reproduction_WF)
+
+## Maximum compact.
+function gaussian_fitness_function!(z::Vector{Float64}, fitness; optimal, sigma, should_it_print = true,kwargs...)
+    for i in 1:length(z)
+        fitness[i] = exp(-(z[i] - optimal)^2 / sigma^2)
+    end
+    @extras begin
+        distance_to_optimal = (z .- optimal).^2
+    end
+    return distance_to_optimal
+end
+
+parameters_example[:j_print] = 100
+res = evol_model(parameters_example, gaussian_fitness_function!, reproduction_WF!)
+
+@btime res = evol_model(parameters_example, gaussian_fitness_function, reproduction_WF);
+@btime res = evol_model(parameters_example, gaussian_fitness_function!, reproduction_WF!)
+
+
+
+function threshold_public_good_game!(z::Vector{Vector{Bool}}, fitness::Vector{Vector{Float64}};
+                                     a, c, threshold, kwargs...)
+    for (group, fit) in zip(z, fitness)
+        n_player = length(group)
+        # group benefit if threshold reached
+        benefit = (sum(group) > threshold * n_player) ? a * n_player : 0.0
+        @inbounds for j in eachindex(group)
+            fit[j] = c + benefit - (group[j] ? c : 0.0)
+        end
+    end
+    return nothing
+end
+
+parameters_example = (z_ini = [true,false], mu_m = 0.001,
+n_gen = 100, n_ini = 50,n_patch=100, de = 'g', n_simul = 1, 
+a=2,c=1., threshold = 0.65)
+
+@btime res=evol_model(parameters_example,threshold_public_good_game,reproduction_WF)
+@btime res=evol_model(parameters_example,threshold_public_good_game!,reproduction_WF)

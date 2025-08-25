@@ -179,7 +179,8 @@ All simulation settings are passed via the `parameter` argument  which is either
 :split_simul               => Whether to save each simulation replicate to a separate file. Requires :split_sweep = true. Also controls whether simulation replicates can be parallelised independently.
 :sweep_grid                => Whether to use a full Cartesian product (`true`, default) or zip mode (`false`)
 :split_sweep               => Whether to save each parameter set to a separate file. Also controls whether parameter sets can be parallelised independently.
-:simplify                  => if true and only one patch, use flat population vector
+:distributed               => Whether to run simulations on distributed workets. (requires @everywhere for functions and imports)
+:simplify                  => Flatten population if there is a single patch
 ```
 
 #### Default Parameters
@@ -357,7 +358,7 @@ An optional function specifying a migration process that occurs **after reproduc
 
 #### `genotype_to_phenotype_mapping`
 
-This function maps genotypes (e.g. multilocus diploid matrices) to phenotypes. It is used automatically in simulations involving sexual reproduction (`:n_loci > 0`). 
+This function maps genotypes (e.g. multilocus diploid matrices) to phenotypes. It is used automatically in simulations involving sexual reproduction (`:n_loci > 0`). It needs to be defined to the level of an individual genotype (and not population), that is take as input a matrix and not a vector of matrix.
 
 
 ## 📁 Project Structure

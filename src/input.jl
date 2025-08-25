@@ -201,29 +201,45 @@ julia> instanced_fitness_function(population; optimal=1, sigma=2)
 ```
 """
 function preprocess_fitness_function(population, fitness_function,parameters, correction)
+    ## For now, we changed the tuple output of fitness function to vector as it is easier to work with later. 
     #--- Define the instanced fitness function
     instanced_fitness_function = nothing
     if correction == 2
-            ##If single trait,  vectorize if to put it as the only element of the vector output [o1_ind1,o1_ind2] => [[o1_ind1,o1_ind2]]
-            ##If multiple traits,  invert so that we have a vector by output rather by individual [(o1_ind1,o2_ind1),(o1_ind2,o2_ind2)] => ([o1_ind1, o2_ind1], [o2_ind1, o2_ind2])
-            ## Same logic at higher level.
-            instanced_fitness_function = function(population; parameters...)
-                collect(my_invert([my_invert(vectorize_if(fitness_function.(group; parameters...))) for group in population]))
-            end
-        elseif correction == 1
-            ##If single trait,  vectorize if to put it as the only element of the vector output [o1_ind1,o1_ind2] => [[o1_ind1,o1_ind2]]
-            ##If multiple traits,  invert so that we have a vector by output rather by individual [(o1_ind1,o2_ind1),(o1_ind2,o2_ind2)] => ([o1_ind1, o2_ind1], [o2_ind1, o2_ind2])
-            instanced_fitness_function = function(population; parameters...)
-                collect(my_invert(vectorize_if(fitness_function.(population; parameters...))))
-            end
-        elseif correction == 0
-            ##If single trait,  vectorize if to put it as the only element of the vector output [o1_ind1,o1_ind2] => [[o1_ind1,o1_ind2]]
-            instanced_fitness_function = function(population; parameters...)
-                vectorize_if(collect(fitness_function(population; parameters...)))
+        ##If single trait,  vectorize if to put it as the only element of the vector output [o1_ind1,o1_ind2] => [[o1_ind1,o1_ind2]]
+        ##If multiple traits,  invert so that we have a vector by output rather by individual [(o1_ind1,o2_ind1),(o1_ind2,o2_ind2)] => ([o1_ind1, o2_ind1], [o2_ind1, o2_ind2])
+        ## Same logic at higher level.
+        instanced_fitness_function = function(population; parameters...)
+            my_invert([my_invert(collect.(ensure_tuple.(fitness_function.(group; parameters...)))) for group in population])
+        end
+    elseif correction == 1
+        ##If single trait,  vectorize if to put it as the only element of the vector output [o1_ind1,o1_ind2] => [[o1_ind1,o1_ind2]]
+        ##If multiple traits,  invert so that we have a vector by output rather by individual [(o1_ind1,o2_ind1),(o1_ind2,o2_ind2)] => ([o1_ind1, o2_ind1], [o2_ind1, o2_ind2])
+        instanced_fitness_function = function(population; parameters...)
+            my_invert(collect.(ensure_tuple.(fitness_function.(population; parameters...))))
+        end
+    elseif correction == 0
+        ##If single trait,  vectorize if to put it as the only element of the vector output [o1_ind1,o1_ind2] => [[o1_ind1,o1_ind2]]
+        instanced_fitness_function = function(population; parameters...)
+            collect(ensure_tuple(fitness_function(population; parameters...)))
+        end
+    elseif correction == -1
+        #-> In-place so correction is 0 but fitness function take fitness.
+        #instanced_fitness_function  = fitness_function
+        if fitness_function(population,vv(0.,population);parameters...) === nothing
+            #-> Replace by empty vector so we can use the same function to feed to output after
+            instanced_fitness_function = function(population, fitness; parameters...)
+                (fitness_function(population, fitness; parameters...))
+                return Any[]
             end
         else
-            error("Could not infer the correct input type for fitness_function.")
+            #-> There are extras. We need to collect in case they are tuple and vectorise in case there is one.
+            instanced_fitness_function = function(population, fitness; parameters...)
+                collect(ensure_tuple(fitness_function(population, fitness; parameters...)))
+            end
         end
+    else
+        error("Could not infer the correct input type for fitness_function.")
+    end
 
     return instanced_fitness_function
 
@@ -238,12 +254,36 @@ function extract_output_names(population, fitness_function, parameters,correctio
     sample_input = correction == 2 ? population[1][1] :
                     correction == 1 ? population[1] :
                     population
-    output = fitness_function(sample_input; parameters...)
+    position_extras_output = 0
+    if correction != -1
+        output = fitness_function(sample_input; parameters...)
+        #-> Skip fitness
+        position_extras_output = 2
+    elseif correction == -1
+        #-> In-place 
+        output = fitness_function(sample_input, vv(0.,sample_input); parameters...)
+        position_extras_output = 1
+    end
     if output isa NamedTuple
-        return [string(k) for k in keys(output)[2:end]]
+        return [string(k) for k in keys(output)[position_extras_output:end]]
     else
         return String[]
     end
+end
+
+
+## Make a single sample run of fitness function. Use to preprocess the fitness function (for instance the size of the output)
+function peek_fitness_output(population, fitness_function, parameters, correction)
+    sample_input = correction == 2 ? population[1][1] :
+                    correction == 1 ? population[1] :
+                    population
+    if correction != -1
+        output = fitness_function(sample_input; parameters...)
+    elseif correction == -1
+        #-> In-place 
+        output = fitness_function(sample_input, similar(sample_input); parameters...)
+    end
+    return output
 end
 
 function _infer_fitness_function_correction(population,fitness_function::Function, parameters,genotype_to_phenotype_mapping)
@@ -603,6 +643,7 @@ function _base_default_parameters()
         :split_simul => false,
         :sweep_grid => true,
         :split_sweep => false,
+        :distributed => false,
         :n_simul => 1,
         :simplify => true
     )
@@ -653,7 +694,7 @@ const PARAMETER_CATEGORIES = [
     "Reproduction settings"   => [:str_selection],
     "Output options"          => [:n_print, :j_print, :de, :other_output_names],
     "File writing"            => [:write_file, :name_model, :parameters_to_omit, :additional_parameters_to_omit],
-    "Simulation control"      => [:n_simul, :split_simul, :sweep_grid, :split_sweep, :simplify],
+    "Simulation control"      => [:n_simul, :split_simul, :sweep_grid, :split_sweep, :distributed, :simplify],
 ]
 
 const PARAMETER_DESCRIPTIONS = Dict(
@@ -679,7 +720,8 @@ const PARAMETER_DESCRIPTIONS = Dict(
     :split_simul  => "Whether to save each simulation replicate to a separate file. Requires :split_sweep = true. Also controls whether simulation replicates can be parallelised independently.",
     :sweep_grid => "Whether to use a full Cartesian product (`true`, default) or zip mode (`false`)",
     :split_sweep  => "Whether to save each parameter set to a separate file. Also controls whether parameter sets can be parallelised independently.",
-    :simplify     => "Simplify population structure if possible"
+    :distributed => "Whether to run simulations on distributed workets. (requires @everywhere for functions and imports)",
+    :simplify     => "Flatten population if there is a single patch"
 )
 
 const PARAMETERS_TO_ALWAYS_OMIT = ["other_output_names",

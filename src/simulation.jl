@@ -143,14 +143,14 @@ function get_template_model(parameters_input, fitness_function, repro_function; 
                 genotype_to_phenotype_mapping = x -> additive_mapping(x,parameters[:delta])
             end
         end
-        calculate_phenotype = pop -> _lift_map(genotype_to_phenotype_mapping, pop)
+        calculate_phenotype = genotype_to_phenotype_mapping === identity ? identity : (pop -> _lift_map(genotype_to_phenotype_mapping, pop))
 
 
         #--- Initialise the population 
         population = initialise_population(parameters[:z_ini], parameters[:n_ini], parameters[:n_patch]; boundaries = parameters[:boundaries], simplify = parameters[:simplify],n_loci = parameters[:n_loci])
         #--- Initialise type of reproduction
         reproduction_mode = :pure
-        new_population = similar(population)
+        new_population = deepcopy(population)
         if contains(give_me_my_name(repro_function), "!")
             if contains(give_me_my_name(repro_function), "WF")
                 reproduction_mode = :inplace_double
@@ -158,17 +158,42 @@ function get_template_model(parameters_input, fitness_function, repro_function; 
                 reproduction_mode = :inplace_single
             end
         end
+        in_place_fitness_function = contains(give_me_my_name(fitness_function), "!") ? true : false
         #--- Initialise second parameters which need to be derived from the given parameters (which can be directly printed)
         parameters,cst_output_name,cst_output = compute_derived_parameters!(parameters,additional_parameters;additional_parameters_to_omit=parameters[:additional_parameters_to_omit])
         #--- Preprocess fitness function
-        ## Standardise the output of the fitness function. See preprocess_fitness_function for details.
-        correction = _infer_fitness_function_correction(population,fitness_function, parameters,calculate_phenotype)
         population_phenotype = calculate_phenotype(population)
-        instanced_fitness_function = preprocess_fitness_function(population_phenotype, fitness_function, parameters,correction)
-        ## If fitness function returns a named tuple and no other output name specified, we get the names of the additional output.
+        ## Standardise the output of the fitness function. See preprocess_fitness_function for details.
+        instanced_fitness_function = nothing; output = Any[];
+        if !in_place_fitness_function
+            correction = _infer_fitness_function_correction(population,fitness_function, parameters,calculate_phenotype)
+            # fitness_output = peek_fitness_output(population, fitness_function, parameters,correction)
+            instanced_fitness_function = preprocess_fitness_function(population_phenotype, fitness_function, parameters,correction)
+            output = [[population_phenotype]; instanced_fitness_function(population_phenotype; parameters...)]
+        else
+            correction = -1
+            ## In-place fitness functions don’t return fitness values, so we cannot infer the correction.
+            ## Instead, check the function signature to ensure it matches the population structure.
+            @assert _infer_fitness_function_correction_by_signature(population, fitness_function) == 0  """
+            In-place fitness functions must have the whole population as trait input  
+            - If your whole population is a vector of individuals, the fitness function must work on a vector. 
+            - If your whole population is a vector of vectors (metapopulation), the fitness function must work on a vector of vectors.
+            """
+            instanced_fitness_function = preprocess_fitness_function(population_phenotype, fitness_function, parameters,correction)
+            fitness = vv(0.,population_phenotype)
+            output = [[population_phenotype,fitness]; instanced_fitness_function(population_phenotype, fitness; parameters...)]
+        end
+        @assert nested_eltype(output[2]) == Float64 "Fitness has to be of Float64 type"
+
+        ## If fitness function returns a named tuple and no other output name specified, we get the names of the extras output.
         other_output_names = !isempty(parameters[:other_output_names]) ? parameters[:other_output_names] : extract_output_names(population_phenotype, fitness_function, parameters,correction)
-        #--- Initialize the dataframe containing the results and the saving function
-        output = [[population_phenotype]; instanced_fitness_function(population_phenotype; parameters...)]
+        ## Truncate if too many names were provided
+        if length(other_output_names) > length(output)-2
+            extras_ignored = join(other_output_names[(length(output) - 1):end], ", ", " and ")
+            resize!(other_output_names,length(output)-2)
+            println("Too many extra output names were provided; the extras $extras_ignored are ignored")
+        end
+        
         df_res, saver = init_data_output(
             only(parameters[:de]), [["z", "fitness"]; other_output_names],
             output, parameters[:n_gen], parameters[:n_print], parameters[:j_print],
@@ -192,24 +217,33 @@ function get_template_model(parameters_input, fitness_function, repro_function; 
 
         #*** Run simulations
         for i_gen in 1:parameters[:n_gen]
-            #--- Calculate fitness
-            population_phenotype = calculate_phenotype(population)
-            output = [[population_phenotype]; instanced_fitness_function(population_phenotype; parameters..., 
-            should_it_print=should_it_print(i_gen, parameters[:n_print], parameters[:j_print]))
-            ]
 
+            population_phenotype = calculate_phenotype(population)
+            output[1] = population_phenotype
+            #--- Calculate fitness
+            if !in_place_fitness_function
+                #@ To avoid reallocating memory
+                #@ Note that it means that the output keep the old extras when not calculating them but it is fine since we print/use extras only when calculating them.
+                res = instanced_fitness_function(population_phenotype; parameters..., should_it_print=should_it_print(i_gen, parameters[:n_print], parameters[:j_print]))
+                output[2:(1+length(res))] = res
+            else
+            #-> In-place fitness function
+                res = instanced_fitness_function(population_phenotype, output[2]; parameters..., should_it_print=should_it_print(i_gen, parameters[:n_print], parameters[:j_print]))
+                #@ Note that it means that the output keep the old extras when not calculating them but it is fine since we print/use extras only when calculating them.
+                output[3:end] = res
+            end
             #--- Save
             saver(df_res, i_gen, output)
             #--- Reproduce
             if reproduction_mode == :pure
                 #->repro_function gives back a new population which needs to be assigned (slower)
-                population = repro_function(population, float.(output[2]), parameters[:str_selection], parameters[:mu_m], mut_kwargs; repro_kwargs...)
+                population = repro_function(population, output[2], parameters[:str_selection], parameters[:mu_m], mut_kwargs; repro_kwargs...)
             elseif reproduction_mode == :inplace_single
                 #->repro_function is in-place (faster)
-                repro_function(population, float.(output[2]), parameters[:str_selection], parameters[:mu_m], mut_kwargs; repro_kwargs...)
+                repro_function(population, output[2], parameters[:str_selection], parameters[:mu_m], mut_kwargs; repro_kwargs...)
             elseif reproduction_mode == :inplace_double
                 #->repro_function is in-place (faster)
-                repro_function(population, new_population,float.(output[2]), parameters[:str_selection], parameters[:mu_m], mut_kwargs; repro_kwargs...)
+                repro_function(population, new_population,output[2], parameters[:str_selection], parameters[:mu_m], mut_kwargs; repro_kwargs...)
                 population, new_population = new_population, population 
             end
             #--- Check if all patches became empty 
@@ -327,33 +361,52 @@ function run_parameter_sweep_distributed(fun, sweep, parameters)
     end
 
     if parameters[:write_file]
-        if parameters[:split_sweep] && parameters[:split_simul] || (parameters[:split_simul] && isempty(sweep))
+        if (parameters[:split_sweep] && parameters[:split_simul]) || (parameters[:split_simul] && isempty(sweep))
             # -> Parallelise both: each sweep point, each replicate, independently saved
-            @sync for i in 1:n
-                @async begin
-                    @sync @distributed for i_simul in 1:(parameters[:n_simul])
+            jobs = collect(Iterators.product(1:n, 1:parameters[:n_simul]))
+            if parameters[:distributed]
+                @sync @distributed for k in eachindex(jobs)
+                        i, i_simul = jobs[k]
                         id_simul = get_simulation_seed(parameters, i_simul)
                         res = fun(list_parameters_set[i], id_simul)
-                        ## We add id_simul to the name of the file
                         CSV.write(build_filepath(parameters[:name_model], list_parameters_set[i], parameters[:parameters_to_omit], ".csv", id_simul), res)
+                end
+            else
+                Threads.@threads for k in eachindex(jobs)
+                        i, i_simul = jobs[k]
+                        id_simul = get_simulation_seed(parameters, i_simul)
+                        res = fun(list_parameters_set[i], id_simul)
+                        CSV.write(build_filepath(parameters[:name_model], list_parameters_set[i], parameters[:parameters_to_omit], ".csv", id_simul), res)
+                end
+            end
+        elseif parameters[:split_sweep]
+            # -> Parallelise only over parameter sets
+            if parameters[:distributed]
+                @sync @distributed for i in 1:n
+                    filepath = build_filepath(parameters[:name_model],list_parameters_set[i],parameters[:parameters_to_omit],".csv")
+                    for i_simul in 1:parameters[:n_simul]
+                        id_simul = get_simulation_seed(parameters, i_simul)
+                        res = fun(list_parameters_set[i], id_simul)
+                        CSV.write(filepath, res;
+                                append = i_simul > 1,
+                                writeheader = i_simul == 1)
+                    end
+                end
+            else
+                Threads.@threads for i in 1:n
+                    filepath = build_filepath(parameters[:name_model],list_parameters_set[i],parameters[:parameters_to_omit],".csv")
+                    for i_simul in 1:parameters[:n_simul]
+                        id_simul = get_simulation_seed(parameters, i_simul)
+                        res = fun(list_parameters_set[i], id_simul)
+                        CSV.write(filepath, res;
+                                append = i_simul > 1,
+                                writeheader = i_simul == 1)
                     end
                 end
             end
-
-        elseif parameters[:split_sweep]
-            # -> Parallelise only over parameter sets
-            @sync @distributed for i in 1:n
-                df_res = DataFrame()
-                for i_simul in 1:parameters[:n_simul]
-                    id_simul = get_simulation_seed(parameters, i_simul)
-                    res = fun(list_parameters_set[i], id_simul)
-                    append!(df_res, res)
-                end
-                CSV.write(build_filepath(parameters[:name_model], list_parameters_set[i], parameters[:parameters_to_omit], ".csv"), df_res)
-            end
         end
-        #I don't know why it is super slow 
-        #         elseif parameters[:split_sweep]
+
+
         # # -> Parallelise only over parameter sets
         #     channel = RemoteChannel(() -> Channel{Bool}(), 1)
         #     @sync begin
@@ -384,3 +437,15 @@ function run_parameter_sweep_distributed(fun, sweep, parameters)
     end
 end
 
+
+function parallel_if(distributed::Bool, range, body)
+    if distributed
+        @sync @distributed for k in range
+            body(k)
+        end
+    else
+        Threads.@threads for k in range
+            body(k)
+        end
+    end
+end

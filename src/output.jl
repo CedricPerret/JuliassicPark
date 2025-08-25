@@ -89,7 +89,8 @@ macro extras(block)
     # Extract the left-hand side variable names from assignmentss
     vars = [stmt.args[1] for stmt in assignments]
     # Generate code to define each variable as `nothing`    
-    init = [:( $(esc(var)) = nothing ) for var in vars]
+    #init = [:( $(esc(var)) = nothing ) for var in vars]
+    init = [:( $(esc(var)) = [] ) for var in vars]
     # Return full quoted expression: define all vars, then conditionally assign
     return quote
         $(init...)   # Always define all variables as `nothing`
@@ -307,7 +308,8 @@ function init_data_output(de,output_names::Vector{String},output_example,n_gen::
         correction_function = replace(level_output,
         'g'=>(x->fill(x[1],n_patch)),
         'G'=>(x->fill(x,n_patch)),
-        'p'=>(x->x),'i'=>(x->mean.(x)),
+        'p'=>(x->x),
+        'i'=>(x->mean.(x)),
         'I'=>(x->mean.(collect(Iterators.partition(x,n_pop)))))
 
         output_names = string.(replace(level_output,'g'=>"",'G'=>"",'p'=>"",'i'=>"mean_",'I'=>"mean_"),output_names)

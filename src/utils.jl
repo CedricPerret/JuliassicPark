@@ -107,8 +107,14 @@ Creates a `Vector{Vector}` filled with value `x` of shape `[outer][inner]`.
 function vv(x, n_patch::Int=2, n_ind::Int=3)
     [ [copy(x) for _ in 1:n_ind] for _ in 1:n_patch ]
 end
+
+##shape-from-example
 function vv(x, population::Vector{<:AbstractVector})
     [[copy(x) for _ in 1:length(population[patch])] for patch in 1:length(population)]
+end
+
+function vv(x, population::AbstractVector)
+    [copy(x) for _ in 1:length(population)]
 end
 
 vv() = vv_rand(2, 3)
@@ -266,19 +272,13 @@ function my_invert(v)
     end
 end
 
-"""
-    vectorize_if(v)
 
-To deal with the case where fitness_function provides a single output, which we want to put as the only element of the vector output [o1_ind1,o1_ind2] => [[o1_ind1,o1_ind2]]
-For discussion on the types used here, see  https://m3g.github.io/JuliaNotes.jl/stable/typevariance/
-"""
-function vectorize_if(v)
-    if typeof(v) <: Vector{<:Real} || typeof(v) <: Vector{<:Vector{<:Real}}
-        [v]
-    else
-        v
-    end
-end
+ensure_tuple(x::Union{Tuple,NamedTuple}) = x
+ensure_tuple(x) = (x,)
+
+# function same_shape(a, b)
+#     length(a) == length(b) && all(length.(a) .== length.(b))
+# end
 
 
 #-----------------------------------------------
@@ -367,6 +367,26 @@ function normalised(instance_function::Function,boundaries)
     return(f1a)
 end
 
+#*** In-place version for performance
+
+function power!(v::Vector,power::Float64)
+    for i in 1:length(v)
+        v[i] = v[i]^power
+    end
+end
+
+function power!(v::Vector{<:AbstractVector},power::Float64)
+    for j in 1:length(v)
+        for i in 1:length(v[j])
+            v[j][i] = v[j][i]^power
+        end
+    end
+end
+
+#@test = rand(100000)
+#@btime test .^ 2.3;
+#@btime power!(test,2.3);
+
 #-----------------------------------------------
 #*** Function introspection and types
 #-----------------------------------------------
@@ -428,7 +448,3 @@ end
 
 @inline _lift_map(f, pop::AbstractVector) = map(f, pop)
 @inline _lift_map(f, pop::AbstractVector{<:AbstractVector}) = map(p -> _lift_map(f, p), pop)
-
-# Micro-optimization when f === identity (skip calls, just copy)
-@inline _lift_map(::typeof(identity), pop::AbstractVector) = copy(pop)
-@inline _lift_map(::typeof(identity), pop::AbstractVector{<:AbstractVector}) = map(copy, pop)

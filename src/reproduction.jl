@@ -62,7 +62,7 @@ end
 #*** ASEXUAL REPRODUCTION
 #-----------------------------------------------
 
-function safe_sample(pop, weights, n)
+function safe_sample(pop, weights::AbstractVector{<:Real}, n)
     try
         return sample(pop, Weights(weights), n)
     catch e
@@ -80,7 +80,7 @@ function safe_sample(pop, weights, n)
     end
 end
 
-function safe_sample(pop, weights, n; replace = true)
+function safe_sample(pop, weights::AbstractVector{<:Real}, n; replace = true)
     try
         return sample(pop, Weights(weights), n; replace = replace)
     catch e
@@ -97,7 +97,6 @@ function safe_sample(pop, weights, n; replace = true)
         end
     end
 end
-
 
 #-----------------------------------------------
 #*** Reproduction Moran Process
@@ -138,7 +137,8 @@ reproduction_Moran_DB!(pop, fitness, str_selection, mu_m, mut_kwargs)
 """
 function reproduction_Moran_DB!(pop::Vector{T},fitness::Vector{Float64},str_selection::Float64,mu_m, mut_kwargs; n_replacement = 1, kwargs...) where T
     correct_fitness!(fitness)
-    pop[sample(eachindex(pop),n_replacement,replace=false)] = mutation.(safe_sample(pop,Weights(fitness.^str_selection),n_replacement),Ref(mu_m);mut_kwargs...)
+    power!(fitness,str_selection)
+    pop[sample(eachindex(pop),n_replacement,replace=false)] = mutation.(safe_sample(pop,Weights(fitness),n_replacement),Ref(mu_m);mut_kwargs...)
 end
 
 
@@ -175,7 +175,8 @@ reproduction_Moran_BD!(pop, fitness, str_selection, mu_m, mut_kwargs)
 """
 function reproduction_Moran_BD!(pop::Vector{T},fitness::Vector{Float64},str_selection::Float64,mu_m, mut_kwargs; n_replacement = 1, kwargs...) where T
     correct_fitness!(fitness)
-    pop[safe_sample(eachindex(pop),Weights(1 ./ (fitness.^str_selection)),n_replacement,replace=false)] = mutation.(sample(pop,n_replacement),Ref(mu_m);mut_kwargs...)
+    power!(fitness,str_selection)
+    pop[safe_sample(eachindex(pop),Weights(1 ./ (fitness)),n_replacement,replace=false)] = mutation.(sample(pop,n_replacement),Ref(mu_m);mut_kwargs...)
 end
 
 """
@@ -270,7 +271,8 @@ function reproduction_WF(pop::Vector{T},fitness::Vector{Float64},str_selection::
     #@ Equivalent to Moran death–birth reproduction with n_replacement = population size,
     #@ but avoids explicitly sampling deaths, which improves performance.  
     correct_fitness!(fitness)
-    offspring_pop = safe_sample(pop,Weights(fitness.^str_selection),length(pop))
+    power!(fitness,str_selection)
+    offspring_pop = safe_sample(pop,Weights(fitness),length(pop))
     mutation!(offspring_pop,mu_m;mut_kwargs...)
     return(offspring_pop)
 end
@@ -288,15 +290,22 @@ end
 #--- Wright–Fisher: in-place and single population (vector)
 function reproduction_WF!(pop::Vector{T},new_pop::Vector{T},fitness::Vector{Float64},str_selection::Float64,mu_m,mut_kwargs; kwargs...)where T
     correct_fitness!(fitness)
-    sample!(pop,Weights(fitness.^str_selection),new_pop)
+    power!(fitness,str_selection)
+    sample!(pop,Weights(fitness),new_pop)
     mutation!(new_pop,mu_m;mut_kwargs...)
 end
 
 #--- Wright–Fisher: in-place and metapopulation (vector of vectors)
 function reproduction_WF!(pop::Vector{Vector{T}},new_pop::Vector{Vector{T}},fitness::Vector{Vector{Float64}},str_selection::Float64,mu_m,mut_kwargs; kwargs...) where T
-    error("In-place reproduction for Wright–Fisher is not defined")
+    error("Reproduction Wright-Fisher in place not implemented for metapopulation yet")
 end
 
+function _reproduction_WF_patchwise!(pop::Vector{Vector{T}},new_pop::Vector{Vector{T}},fitness::Vector{Vector{Float64}},str_selection::Float64,mu_m,mut_kwargs; kwargs...) where T
+    for i in eachindex(pop)
+        reproduction_WF!(pop[i], new_pop[i], fitness[i], str_selection, mu_m, mut_kwargs; kwargs...)
+    end
+    return nothing
+end
 
 #--- Internal: Wright–Fisher reproduction independently in each patch
 #! Not exported — used when reproduction occurs locally within each subpopulation
@@ -375,13 +384,10 @@ new_pop = reproduction_WF_island_model_hard_selection(pop, fitness, str_selectio
 """
 function reproduction_WF_island_model_hard_selection(pop::Vector{Vector{T}},fitness::Vector{Vector{Float64}},str_selection::Float64,mu_m, mut_kwargs; mig_rate, kwargs...) where T
     group_sizes = length.(pop) ; n_groups = length(pop);
-    if all(group_sizes .== 1)
-        #-> avoid to flatten. It is particulary slow when many small patches
-        return(reproduction_WF(pop,fitness,str_selection,mu_m, mut_kwargs; mig_rate, kwargs...))
-    end
+    correct_fitness!(fitness)
+    power!(fitness,str_selection)
     migrants_flag=[rand(group_sizes[i]) .< mig_rate for i in 1:n_groups]
     new_pop = [Vector{T}(undef, group_sizes[i]) for i in 1:n_groups]
-    correct_fitness!(fitness)
     for i in 1:n_groups
         #@ It is weirdly faster to flatten even if we have many small patches, than to draw an index and then map it on the vector of vector (see dev)
         new_pop[i][migrants_flag[i]] .= safe_sample(vcat_except(pop,i), StatsBase.Weights(vcat_except(fitness,i)), count(migrants_flag[i]))
@@ -391,7 +397,42 @@ function reproduction_WF_island_model_hard_selection(pop::Vector{Vector{T}},fitn
     return(new_pop)
 end
 
-
+function reproduction_WF_island_model_hard_selection!(pop::Vector{Vector{T}},new_pop::Vector{Vector{T}},fitness::Vector{Vector{Float64}},str_selection::Float64,mu_m, mut_kwargs; mig_rate, kwargs...) where T
+    group_sizes = length.(pop) ; n_groups = length(pop);
+    #--- Everybody reproduce (faster as migration rate tends to be low)
+    if group_sizes[1] != 1
+        for j in eachindex(pop)
+            correct_fitness!(fitness[j])
+            power!(fitness[j],str_selection)
+            sample!(pop[j],Weights(fitness[j]),new_pop[j])
+        end
+    end
+    #--- Everybody reproduce (faster as migration rate tends to be low)
+    ## Buffer
+    offspring_of_migrants = falses(group_sizes[1])
+    #--- For each group...
+    for j in 1:n_groups
+        #--- Draw offspring_of_migrants
+        for i in 1:group_sizes[j]
+            offspring_of_migrants[i] = rand() < mig_rate
+        end
+        #--- if none, skip the rest (no need to calculate the pop and fitness without focal group)
+        if !any(offspring_of_migrants)
+            #-> No immigrants in this group
+            continue
+        end
+        #--- Otherwise build the pop and fitness without focal group
+        idx = findall(offspring_of_migrants)  
+        other_group   = vcat_except(pop, j)
+        other_fitness = StatsBase.Weights(vcat_except(fitness, j))
+        #--- Draw parents of migrants and assign them
+        parents_of_migrants = safe_sample(other_group, other_fitness, length(idx))
+        new_pop[j][idx] = parents_of_migrants
+    end
+    #--- Mutate
+    mutation!(new_pop,mu_m;mut_kwargs...)
+    return nothing
+end
 
 
 """
@@ -615,7 +656,8 @@ offspring = reproduction_WF_sexual(pop, fitness, 1.0, mu_m, mut_kwargs)
 #--- Wright–Fisher: single population (vector)
 function reproduction_WF_sexual(pop,fitness::Vector{Float64},str_selection::Float64,mu_m,mut_kwargs; kwargs...)
     correct_fitness!(fitness)
-    w_fitness = Weights(fitness.^str_selection)
+    power!(fitness,str_selection)
+    w_fitness = Weights(fitness)
     offspring = Vector{eltype(pop)}(undef, length(pop))
     for i in 1:length(fitness)
         #--- Sample two parents randomly (without replacement)
@@ -628,7 +670,8 @@ end
 #@ We use in-place mutation for genotype represented as matrix to gain performance
 function reproduction_WF_sexual(pop::Vector{Matrix},fitness::Vector{Float64},str_selection::Float64,mu_m,mut_kwargs; kwargs...)
     correct_fitness!(fitness)
-    w_fitness = Weights(fitness.^str_selection)
+    power!(fitness,str_selection)
+    w_fitness = Weights(fitness)
     offspring = Vector{eltype(pop)}(undef, length(pop))
     for i in 1:length(fitness)
         #--- Sample two parents randomly (without replacement)
