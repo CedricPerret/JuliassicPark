@@ -98,6 +98,43 @@ function safe_sample(pop, weights::AbstractVector{<:Real}, n; replace = true)
     end
 end
 
+function safe_sample!(pop, weights::AbstractVector{<:Real}, dest)
+    try
+        return sample!(pop, Weights(weights), dest)
+    catch e
+        if isa(e, ArgumentError) && occursin("found negative weight", sprint(showerror, e))
+            @error "Negative fitness value detected during reproduction." weights
+            error("Fitness values must be strictly positive for Wright–Fisher reproduction.\n" *
+                  "You likely passed raw payoffs instead of valid fitness values.\n" *
+                  "Consider transforming payoffs into fitness using:\n" *
+                  "  • exponential mapping:    fitness = exp.(β .* payoff)\n" *
+                  "  • baseline shift:         fitness = payoff .- minimum(payoff) + ϵ\n" *
+                  "  • or any transformation ensuring fitness > 0.")
+        else
+            rethrow(e)
+        end
+    end
+end
+
+function safe_sample!(pop, weights::AbstractVector{<:Real}, dest; replace = true)
+    try
+        return sample!(pop, Weights(weights), dest; replace = replace)
+    catch e
+        if isa(e, ArgumentError) && occursin("found negative weight", sprint(showerror, e))
+            @error "Negative fitness value detected during reproduction." weights
+            error("Fitness values must be strictly positive for Wright–Fisher reproduction.\n" *
+                  "You likely passed raw payoffs instead of valid fitness values.\n" *
+                  "Consider transforming payoffs into fitness using:\n" *
+                  "  • exponential mapping:    fitness = exp.(β .* payoff)\n" *
+                  "  • baseline shift:         fitness = payoff .- minimum(payoff) + ϵ\n" *
+                  "  • or any transformation ensuring fitness > 0.")
+        else
+            rethrow(e)
+        end
+    end
+end
+
+
 #-----------------------------------------------
 #*** Reproduction Moran Process
 #-----------------------------------------------
@@ -291,7 +328,7 @@ end
 function reproduction_WF!(pop::Vector{T},new_pop::Vector{T},fitness::Vector{Float64},str_selection::Float64,mu_m,mut_kwargs; kwargs...)where T
     correct_fitness!(fitness)
     power!(fitness,str_selection)
-    sample!(pop,Weights(fitness),new_pop)
+    safe_sample!(pop,Weights(fitness),new_pop)
     mutation!(new_pop,mu_m;mut_kwargs...)
 end
 
@@ -300,12 +337,6 @@ function reproduction_WF!(pop::Vector{Vector{T}},new_pop::Vector{Vector{T}},fitn
     error("Reproduction Wright-Fisher in place not implemented for metapopulation yet")
 end
 
-function _reproduction_WF_patchwise!(pop::Vector{Vector{T}},new_pop::Vector{Vector{T}},fitness::Vector{Vector{Float64}},str_selection::Float64,mu_m,mut_kwargs; kwargs...) where T
-    for i in eachindex(pop)
-        reproduction_WF!(pop[i], new_pop[i], fitness[i], str_selection, mu_m, mut_kwargs; kwargs...)
-    end
-    return nothing
-end
 
 #--- Internal: Wright–Fisher reproduction independently in each patch
 #! Not exported — used when reproduction occurs locally within each subpopulation
@@ -338,6 +369,13 @@ function _reproduction_WF_patchwise(pop::Vector{Vector{T}}, fitness::Vector{Vect
                                     str_selection::Float64, mu_m, mut_kwargs; kwargs...) where T
     [reproduction_WF(group, fitness_group, str_selection, mu_m, mut_kwargs; kwargs...)
      for (group, fitness_group) in zip(pop, fitness)]
+end
+
+function _reproduction_WF_patchwise!(pop::Vector{Vector{T}},new_pop::Vector{Vector{T}},fitness::Vector{Vector{Float64}},str_selection::Float64,mu_m,mut_kwargs; kwargs...) where T
+    for i in eachindex(pop)
+        reproduction_WF!(pop[i], new_pop[i], fitness[i], str_selection, mu_m, mut_kwargs; kwargs...)
+    end
+    return nothing
 end
 
 """
@@ -383,11 +421,11 @@ mut_kwargs = (; sigma_m = 0.5, boundaries = (0.0, 5.0))
 new_pop = reproduction_WF_island_model_hard_selection(pop, fitness, str_selection, mu_m, mut_kwargs; mig_rate = 0.1)
 """
 function reproduction_WF_island_model_hard_selection(pop::Vector{Vector{T}},fitness::Vector{Vector{Float64}},str_selection::Float64,mu_m, mut_kwargs; mig_rate, kwargs...) where T
-    group_sizes = length.(pop) ; n_groups = length(pop);
+    group_size = length(pop[1]) ; n_groups = length(pop);
     correct_fitness!(fitness)
     power!(fitness,str_selection)
-    migrants_flag=[rand(group_sizes[i]) .< mig_rate for i in 1:n_groups]
-    new_pop = [Vector{T}(undef, group_sizes[i]) for i in 1:n_groups]
+    migrants_flag=[rand(group_size) .< mig_rate for i in 1:n_groups]
+    new_pop = [Vector{T}(undef, group_size) for i in 1:n_groups]
     for i in 1:n_groups
         #@ It is weirdly faster to flatten even if we have many small patches, than to draw an index and then map it on the vector of vector (see dev)
         new_pop[i][migrants_flag[i]] .= safe_sample(vcat_except(pop,i), StatsBase.Weights(vcat_except(fitness,i)), count(migrants_flag[i]))
@@ -398,41 +436,78 @@ function reproduction_WF_island_model_hard_selection(pop::Vector{Vector{T}},fitn
 end
 
 function reproduction_WF_island_model_hard_selection!(pop::Vector{Vector{T}},new_pop::Vector{Vector{T}},fitness::Vector{Vector{Float64}},str_selection::Float64,mu_m, mut_kwargs; mig_rate, kwargs...) where T
-    group_sizes = length.(pop) ; n_groups = length(pop);
-    #--- Everybody reproduce (faster as migration rate tends to be low)
-    if group_sizes[1] != 1
+    group_size = length(pop[1]) ; n_groups = length(pop);
+    #--- Prep fitness
+    for j in eachindex(pop)
+        correct_fitness!(fitness[j])
+        power!(fitness[j],str_selection)
+    end
+
+    if group_size > 1
+        #--- Generate philopatric population by reproducing everyone in their patches (non-philopatric will be replaced later)
         for j in eachindex(pop)
-            correct_fitness!(fitness[j])
-            power!(fitness[j],str_selection)
-            sample!(pop[j],Weights(fitness[j]),new_pop[j])
+            safe_sample!(pop[j],Weights(fitness[j]),new_pop[j])
         end
-    end
-    #--- Everybody reproduce (faster as migration rate tends to be low)
-    ## Buffer
-    offspring_of_migrants = falses(group_sizes[1])
-    #--- For each group...
-    for j in 1:n_groups
+        #--- Now, we draw the non-philopatric offspring
+        ## Buffer
+        offspring_of_migrants = falses(group_size)
+        #--- For each group...
+        for j in 1:n_groups
+            #--- Draw who is an offspring_of_migrants
+            for i in 1:group_size
+                offspring_of_migrants[i] = rand() < mig_rate
+            end
+            #--- if none, skip the rest (no need to calculate the pop and fitness without focal group)
+            if !any(offspring_of_migrants)
+                #-> No immigrants in this group
+                continue
+            end
+            #--- Otherwise build the pop and fitness without focal group
+            idx = findall(offspring_of_migrants)  
+            other_group   = vcat_except(pop, j)
+            other_fitness = StatsBase.Weights(vcat_except(fitness, j))
+            #--- Draw parents of migrants
+            parents_of_migrants = safe_sample(other_group, other_fitness, length(idx))
+            #--- Assign parents
+            new_pop[j][idx] = parents_of_migrants
+        end
+    else
+        #-> For groups of 1, we use another method to avoid generating each time the other_group and other_fitness
+        #--- Generate philopatric population by copying everyone (non-philopatric will be replaced later)
+        for j in 1:length(pop)
+            new_pop[j][1] = pop[j][1]
+        end
+        offspring_of_migrants = rand(length(pop)) .< mig_rate
+        #--- We draw from the global pool and redraw if we get the same individual as parent (impossible since migration is true)
         #--- Draw offspring_of_migrants
-        for i in 1:group_sizes[j]
-            offspring_of_migrants[i] = rand() < mig_rate
-        end
-        #--- if none, skip the rest (no need to calculate the pop and fitness without focal group)
-        if !any(offspring_of_migrants)
-            #-> No immigrants in this group
-            continue
-        end
-        #--- Otherwise build the pop and fitness without focal group
         idx = findall(offspring_of_migrants)  
-        other_group   = vcat_except(pop, j)
-        other_fitness = StatsBase.Weights(vcat_except(fitness, j))
-        #--- Draw parents of migrants and assign them
-        parents_of_migrants = safe_sample(other_group, other_fitness, length(idx))
-        new_pop[j][idx] = parents_of_migrants
+        ## Skip if no migrants
+        isempty(idx) && return nothing
+        ## Generate weight fitness only once (need to flatten)
+        w_fitness = StatsBase.Weights(getindex.(fitness, 1))
+        #--- Draw parents of migrants
+        #@ faster to generate all migrants then correct than do it one by one
+        parents_of_migrants = safe_sample(1:length(pop), w_fitness, length(idx))
+        ## Redraw only those that landed on their own patch, until clean
+        while true
+            bad = parents_of_migrants .== idx
+            any(bad) || break
+            parents_of_migrants[bad] = safe_sample(1:length(pop), w_fitness, count(bad))
+        end
+            #--- Assign parents
+        for t in eachindex(idx)
+            new_pop[idx[t]][1] = pop[parents_of_migrants[t]][1]
+        end
     end
+
     #--- Mutate
     mutation!(new_pop,mu_m;mut_kwargs...)
     return nothing
 end
+
+
+
+
 
 
 """
