@@ -47,6 +47,7 @@ Main entry point to run an evolutionary simulation or parameter sweep with user-
 """
 
 ## Wrapper (prepare parameters and put default, then call each part)
+## here prepare only thing that will not be varied in a sweep.
 function evol_model(parameters_input, fitness_function, repro_function; sweep=Dict{Symbol, Vector}(), additional_parameters= Dict{Symbol, Function}(), migration_function = nothing, genotype_to_phenotype_mapping = identity)
     @assert haskey(parameters_input, :z_ini) "Missing required parameter: `:z_ini`. Please provide the initial values or generators for the trait(s)."
     
@@ -71,25 +72,11 @@ function evol_model(parameters_input, fitness_function, repro_function; sweep=Di
     append!(parameters[:parameters_to_omit],PARAMETERS_TO_ALWAYS_OMIT)
     parameters[:parameters_to_omit]= Symbol.(parameters[:parameters_to_omit])
 
-    ## Standardise z_ini
-    # Be careful, it still generates a population where each individual is a real, not a tuple. it is faster. The standardisation is useful for the initialisation
-    if !isa(parameters[:z_ini], Tuple)
-        #-> A single trait but z_ini is not a tuple. We ensure `z_ini` is always a tuple, even if the user provides a scalar (e.g. 0.5).
-        parameters[:z_ini] = tuple(parameters[:z_ini])
-    end
-
-    ## Standardise boundaries
-    if haskey(parameters,:boundaries) == false
-        #-> When z_ini is a boolean, boundaries are assumed to be nothing. 
-        parameters[:boundaries] = fill(nothing,length(parameters[:z_ini]))
-    end
-
     ## Generate the model to output (as shown in replicator, it takes parameters and its ID which is i_simul as input)
-    model = get_template_model(parameters_input, fitness_function, repro_function; additional_parameters= additional_parameters, migration_function = migration_function, genotype_to_phenotype_mapping = genotype_to_phenotype_mapping)
+    model = get_template_model(parameters, fitness_function, repro_function; additional_parameters= additional_parameters, migration_function = migration_function, genotype_to_phenotype_mapping = genotype_to_phenotype_mapping)
     
     #--- Run
     ## If no sweep, it gives back a vector containing as single element the parameters
-    
     run_parameter_sweep_distributed(model, sweep, parameters)
 
 end
@@ -130,9 +117,15 @@ function get_template_model(parameters_input, fitness_function, repro_function; 
 
         parameters = deepcopy(parameters_input)
 
+        ## Standardise z_ini
+        # Be careful, it still generates a population where each individual is a real, not a tuple. it is faster. The standardisation is useful for the initialisation
+        if !isa(parameters[:z_ini], Tuple)
+            #-> A single trait but z_ini is not a tuple. We ensure `z_ini` is always a tuple, even if the user provides a scalar (e.g. 0.5).
+            parameters[:z_ini] = tuple(parameters[:z_ini])
+        end
+    
         #--- Initialise the population 
         population = initialise_population(parameters[:z_ini], parameters[:n_ini], parameters[:n_patch]; boundaries = parameters[:boundaries], simplify = parameters[:simplify],n_loci = parameters[:n_loci])
-        
 
         #--- This is in case the user gives a single generator, not encapsulated in a vector because the expected input is a vector of generators for each trait. 
         if contains(give_me_my_name(repro_function), "sexual") && genotype_to_phenotype_mapping == identity
@@ -205,8 +198,8 @@ function get_template_model(parameters_input, fitness_function, repro_function; 
             output_cst_names=cst_output_name, output_cst=cst_output
         )
 
-        ## We cannot use z_ini to calculate the n_trais as z_ini could be a population or metapopulation to initiate a single trait => we use the population
-        n_traits = typeof(_get_ind(population_phenotype)) <: Tuple ? length(_get_ind(population_phenotype)) : 1
+        ## z_ini has been wrapped in tuple in evol_model
+        n_traits = length(parameters[:z_ini])
 
         if n_traits > 1
             ## In case where only a single mutation rate is given, we assume that it is the same for all traits

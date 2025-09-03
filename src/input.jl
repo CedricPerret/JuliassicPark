@@ -25,42 +25,33 @@ Initialise a population
 # Examples
 
 # One trait, scalar input
-initialise_population(1.0, 5, 2, [0.0, 2.0])
-
-# Two traits: predefined vectors
-initialise_population(([1.0, 2.0, 3.0, 4.0, 5.0], [true, false, true, true, false]), 5, 2,
-                      [[0.0, 10.0], [false, true]])
-initialise_population(([1.0, 2.0, 3.0, 4.0, 5.0], [true, false, true, true, false]), 5, 2,
-                      [[0.0, 10.0]])
+initialise_population(1.0, 5, 2)
 
 # Distribution input with bounds
-initialise_population(Normal(0, 1), 5, 2, [-1.0, 1.0])
+initialise_population(Normal(0, 1), 5, 2; boundaries = [-1.0, 1.0])
 
 # Group to replicate
 example_group = [1.,2.,3.,4.,5.]
-initialise_population(example_group, 5, 2, [-1.0, 10.0], n_loci=0)
-initialise_population(example_group, 5, 2, [-1.0, 10.0], n_loci=1)
+initialise_population(example_group, 5, 2)
 
 # Draw randomly from a vector
-initialise_population([1.,2.,3.], 5, 2, [-1., 10.],n_loci=1)
+initialise_population([1.,2.,3.], 10, 2)
 
 # Diploid with two loci
-initialise_population(Normal(0, 1), 5, 2, [-1.0, 1.0], n_loci=2)
-initialise_population(1., 5, 2, [-1., 1.],n_loci=2)
-initialise_population([1.,2.,3.], 5, 2, [-1., 10.],n_loci=2)
-
-# Metapopulation input
-meta = [[[1.0, 1.1], [1.0, 1.2], [1.0, 1.3], [1.0, 1.4], [1.0, 1.5]],
-        [[2.0, 2.1], [2.0, 2.2], [2.0, 2.3], [2.0, 2.4], [2.0, 2.5]]]
-initialise_population(meta, 5, 2, [[0.0, 3.0]], n_loci=2)
- """
+initialise_population(Normal(0, 1), 5, 2; boundaries= [-1.0, 1.0], n_loci=2)
+"""
  function initialise_population(z_ini, n_ini::Int, n_patch::Int; boundaries=nothing, simplify = true, n_loci = 0)
-    n_trait = length(z_ini)
+    n_trait = z_ini isa Tuple ? length(z_ini) : 1
     ## We wrap the boundaries the time of the initialisation (cannot wrap the parameter before because with a single trait, population simplifies to scalar rather than tuple)
-    if n_trait == 1 && boundaries[1] !== nothing
-        if !isa(boundaries[1],Vector) && !isa(boundaries[1],Tuple)
-            #-> We standardise the input to get [[min,max]] or [(min,max)]
-            boundaries = [boundaries]
+    if n_trait == 1
+        if !isa(z_ini,Tuple)
+            z_ini = (z_ini,)
+        end
+        if boundaries !== nothing
+            if !isa(boundaries[1],Vector) && !isa(boundaries[1],Tuple)
+                #-> We standardise the input to get [[min,max]] or [(min,max)]
+                boundaries = [boundaries]
+            end
         end
     end
     ##Check for each boundaries if it exists (otherwise it is a boolean)
