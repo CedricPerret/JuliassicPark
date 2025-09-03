@@ -41,6 +41,7 @@ Mutates a trait value `trait_value` with a mutation probability `mu`. The type o
 mutation(0.5, 0.1; mutation_type=:normal, sigma_m=0.1, boundaries=(0.0, 1.0))  # Float64
 mutation(2, 0.2; boundaries=(0, 4))                                            # Int
 mutation(true, 0.5)                                                            # Bool
+```
 """
 #--- Fallback
 function _trait_type_error(x, mu)
@@ -57,7 +58,7 @@ end
 #--- Discrete traits
 function mutation(trait_value::Int, mu_m::Float64; boundaries, kwargs...)
     if rand() < mu_m
-        return(random_int_except(boundaries[1],boundaries[2],trait_value)[1])
+        return(random_int_except(boundaries[1],boundaries[2],trait_value))
     else
         return(trait_value)
     end
@@ -73,7 +74,7 @@ end
 # Specialising on `Val{T}` lets Julia generate fast, type-specific code for each mutation type.
 function mutation(trait_value::Float64, mu_m::Float64, ::Val{T}; kwargs...) where T
     if rand() < mu_m
-        d = get_mutation_distribution(trait_value, Val(T); kwargs...)
+        d = _get_mutation_distribution(trait_value, Val(T); kwargs...)
         return rand(d)
     else
         return trait_value
@@ -87,7 +88,8 @@ function mutation(trait_tuple::Tuple, mu_tuple; kwargs_per_trait...)
     ntuple(i -> mutation(trait_tuple[i], mu_tuple[i]; kwargs_per_trait[i]...), length(mu_tuple))
 end
 
-function mutation(genotype::Matrix, mu_m; kwargs...)
+#--- Sexual
+function mutation(genotype::AbstractMatrix, mu_m; kwargs...)
     return mutation.(genotype, mu_m;kwargs...)
 end
 
@@ -116,20 +118,20 @@ Throws:
 
 Examples:
 ```julia
-get_mutation_distribution(0.5, Val(:normal); sigma_m=0.1, boundaries=(0.0, 1.0))
-get_mutation_distribution(0.5, Val(:gumbel); sigma_m=0.1, bias_m=0.2, boundaries=(0.0, 1.0))
+_get_mutation_distribution(0.5, Val(:normal); sigma_m=0.1, boundaries=(0.0, 1.0))
+_get_mutation_distribution(0.5, Val(:gumbel); sigma_m=0.1, bias_m=0.2, boundaries=(0.0, 1.0))
 """
-function get_mutation_distribution(x::Float64, ::Val{:normal}; sigma_m, boundaries, kwargs...)
+function _get_mutation_distribution(x::Float64, ::Val{:normal}; sigma_m, boundaries, kwargs...)
     Truncated(Normal(x, sigma_m), boundaries...)
 end
 
 #---Gumbel distribution for biased mutation (see Henrich paper 2017 Tasmanian ...)
-function get_mutation_distribution(x::Float64, ::Val{:gumbel}; sigma_m, bias_m=0.0, boundaries, kwargs...)
+function _get_mutation_distribution(x::Float64, ::Val{:gumbel}; sigma_m, bias_m=0.0, boundaries, kwargs...)
     Truncated(Gumbel(x + bias_m, sigma_m), boundaries...)
 end
 
-function get_mutation_distribution(x::Float64, ::Val{T}; kwargs...) where T
-    error("Unsupported mutation type: $T. To see implemented mutation type, check doc of get_mutation_distribution")
+function _get_mutation_distribution(x::Float64, ::Val{T}; kwargs...) where T
+    error("Unsupported mutation type: $T. To see implemented mutation type, check doc of _get_mutation_distribution")
 end
 
 
@@ -168,7 +170,7 @@ function mutation!(population::Vector{Float64},mu_m; mutation_type::Symbol = :no
     T = Val(mutation_type)
     @inbounds for i in eachindex(population)
         if rand() < mu_m
-            d = get_mutation_distribution(population[i], T; boundaries=boundaries, kwargs...)
+            d = _get_mutation_distribution(population[i], T; boundaries=boundaries, kwargs...)
             population[i] = rand(d)
         end
     end
@@ -179,7 +181,7 @@ function mutation!(population::Vector{Vector{Float64}},mu_m; mutation_type::Symb
     @inbounds for i in eachindex(population)
         for j in eachindex(population[i])
             if rand() < mu_m
-                distribution = get_mutation_distribution(population[i][j], T; boundaries=boundaries, kwargs...)
+                distribution = _get_mutation_distribution(population[i][j], T; boundaries=boundaries, kwargs...)
                 population[i][j] = rand(distribution)
             end
         end
@@ -194,8 +196,14 @@ function mutation!(population::Vector{T},mu_m; kwargs...) where T
     end
 end
 
+function mutation!(population::Vector{Vector{T}},mu_m; kwargs...) where T
+    @inbounds for j in eachindex(population)
+        mutation!(population[j],mu_m; kwargs...)
+    end
+end
+
 """
-    mutation!(trait_genotype::Matrix{Float64}, mu_m; mutation_type=:normal, kwargs...)
+    mutation!(genotype::Matrix{Float64}, mu_m; mutation_type=:normal, kwargs...)
 
 In-place mutation of a diploid genotype represented as a `Matrix{Float64}`.
 
@@ -203,7 +211,7 @@ Each allele (matrix element) has an independent probability `mu` of mutating. Th
 value is drawn from a distribution specified by `mutation_type` and `kwargs...`.
 
 # Arguments
-- `trait_genotype`: A 2D matrix representing diploid alleles (rows: loci, columns: alleles).
+- `genotype`: A 2D matrix representing diploid alleles (rows: loci, columns: alleles).
 - `mu_m`: Per-allele mutation probability.
 - `mutation_type`: Type of mutation distribution (`:normal`, `:gumbel`, etc.).
 - `kwargs...`: Additional mutation parameters (e.g., `sigma_m`, `boundaries`, `bias_m`).
@@ -212,36 +220,36 @@ value is drawn from a distribution specified by `mutation_type` and `kwargs...`.
 - The genotype is mutated in place.
 """
 #--- Non-haploid with allelic values (multiple loci)
-function mutation!(trait_genotype::Matrix{Float64},mu_m; mutation_type=:normal, kwargs...)
+function mutation!(genotype::Matrix{Float64},mu_m; mutation_type=:normal, kwargs...)
     T = Val(mutation_type)
-    for i in axes(trait_genotype,1), j in axes(trait_genotype,2)
+    for i in axes(genotype,1), j in axes(genotype,2)
         if rand() < mu_m
-            distribution = get_mutation_distribution(trait_genotype[i,j], T; kwargs...)
-            trait_genotype[i,j] = rand(distribution)
+            distribution = _get_mutation_distribution(genotype[i,j], T; kwargs...)
+            genotype[i,j] = rand(distribution)
         end
     end
 end
 
 #--- Non-haploid with +/- effect (multiple loci)
-function mutation!(trait_genotype::BitMatrix,mu_m; mutation_type=:normal, kwargs...)
+function mutation!(genotype::BitMatrix,mu_m; mutation_type=:normal, kwargs...)
     T = Val(mutation_type)
-    for i in axes(trait_genotype,1), j in axes(trait_genotype,2)
+    for i in axes(genotype,1), j in axes(genotype,2)
         if rand() < mu_m
-            trait_genotype[i,j] = !(trait_genotype[i,j])
+            genotype[i,j] = !(genotype[i,j])
         end
     end
 end
 
-function mutation!(population::Vector{Matrix},mu_m; mutation_type=:normal, kwargs...)
-    @inbounds for i in eachindex(population)
-        mutation!(population[i], mu_m;mutation_type, kwargs...)
+function mutation!(genotype::Vector{Matrix},mu_m; mutation_type=:normal, kwargs...)
+    @inbounds for i in eachindex(genotype)
+        mutation!(genotype[i], mu_m;mutation_type, kwargs...)
     end
 end
 
-function mutation!(population::Vector{Vector{Matrix}},mu_m; mutation_type=:normal, kwargs...)
-    @inbounds for i in eachindex(population)
-        for j in population[i]
-            mutation!(population[i][j], mu_m;mutation_type, kwargs...)
+function mutation!(genotype::Vector{Vector{Matrix}},mu_m; mutation_type=:normal, kwargs...)
+    @inbounds for i in eachindex(genotype)
+        for j in eachindex(genotype[i])
+            mutation!(genotype[i][j], mu_m;mutation_type, kwargs...)
         end
     end
 end

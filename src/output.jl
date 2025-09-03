@@ -205,7 +205,7 @@ Trait values are extracted from the first element of `output_example`, and if th
 - `'I'`: Vector of length `n_patch * n_pop` → individual-level (well-mixed)
 """
 function init_data_output(de,output_names::Vector{String},output_example,n_gen::Int, gen_first_print::Int, print_every::Int, i_simul, n_patch::Int, n_pop::Int, n_cst::Bool; output_cst_names=[],output_cst=[])
-    #--- Basic sanity checks
+    #--- Safety checks
     @assert de in ['g', 'p', 'i'] "Invalid value for `de`: expected one of 'g', 'p', or 'i'."
     @assert n_patch ≥ 1 "Expected `n_patch` to be a positive integer."
     @assert n_pop ≥ 1 "Expected `n_pop` to be a positive integer."
@@ -213,38 +213,30 @@ function init_data_output(de,output_names::Vector{String},output_example,n_gen::
     @assert gen_first_print ≥ 1 "Expected `gen_first_print` to be a positive integer."
     @assert print_every ≥ 1 "Expected `print_every` to be a positive integer."
     @assert gen_first_print ≤ n_gen "First print generation must be ≤ total number of generations."
-
     for i in 1:length(output_example)
             @assert length(output_example[i]) == 1 || length(output_example[i]) == n_patch || (length(output_example[i]) == n_pop && !(isa(output_example[i][1], Vector))) || (isa(output_example[i][1], Vector) && length(output_example[i][1]) == n_pop) "The variable to save `:$(Symbol(output_names[i]))` must have resolution compatible with the model: " *
             "either one value per generation, per patch (length = n_patch), or per individual " *
             "(length = n_patch, with sub-vectors of length n_ini)."
     end
 
+    #--- Number of generation to print 
     gen_printed = gen_first_print:print_every:n_gen
     n_gen_printed = length(gen_printed)
     #--- Adjust output names if not enough names are provided
     if length(output_names) < length(output_example) 
         output_names = [output_names;["V"*string(i) for i in 1:(length(output_example) -  length(output_names))]]
     end
-    
-
-    ## Check if there are multiple traits 
+    #--- Multiple traits?
     ## If yes, the first vector needs to be decoupled into one vector per trait.
-    if nested_eltype(output_example[1]) <: Tuple
-        n_trait = fieldcount(nested_eltype(output_example[1]))
+    #@show output_example
+    correct_output_for_n_trait = make_output_corrector(output_example[1])
+    n_trait = fieldcount(_leaf_type(output_example[1]))
+    if n_trait > 1
         output_names = [["z"*string(i) for i in 1:n_trait]; output_names[2:end]]
-        #@ To be clean, we should reorganize them as a vector of vectors each time so it has the same format as a metapop.
-        #@ However, our saver can deal with this kind of data too.
-        correct_output_for_n_trait = output -> [collect(invert(reduce(vcat, output[1]))); output[2:end]]
-    else
-        n_trait = 1
-        #-> So no need to correct the output
-        correct_output_for_n_trait = output -> output
     end
-    ## Identify the resolution of the variable measured
+    #--- Identify the resolution of the variables measured
     level_output = infer_variable_resolution(correct_output_for_n_trait(output_example),n_patch=n_patch)
     type_output_cst = infer_variable_resolution(output_cst,n_patch=n_patch)
-
 
     ## Each output is modified (correction_function) to fit the resolution required by the user.
     #*** Results required at the generation level
@@ -256,12 +248,13 @@ function init_data_output(de,output_names::Vector{String},output_example,n_gen::
         'p'=>(x->mean(x)),
         'i'=>(x->mean(vcat(x...))),
         'I'=>(x->mean(x)))
-        
+        ## with corresponding names
         output_names=string.(replace(level_output,'g'=>"",'G'=>"",'p'=>"mean_",'i'=>"mean_mean_",'I'=>"mean_mean_"),output_names)
         #! We do not print the lower levels of details of the constant output
-        output_cst=output_cst[type_output_cst .∉ Ref(['i', 'I','p'])]
-        output_cst_names=output_cst_names[type_output_cst .∉ Ref(['i', 'I','p'])]
-        type_output_cst=type_output_cst[type_output_cst .∉ Ref(['i', 'I','p'])]
+        cst_to_keep =  type_output_cst .∈ Ref(['g', 'G'])
+        output_cst, output_cst_names, type_output_cst = getindex.((output_cst, output_cst_names, type_output_cst), Ref(cst_to_keep))
+        empty_output = [i[] for i in _leaf_type.([correction_function[i](correct_output_for_n_trait(output_example)[i]) for i in eachindex(correction_function)])]
+
 
         #--- Initialise dataFrame
         if n_cst
@@ -272,34 +265,34 @@ function init_data_output(de,output_names::Vector{String},output_example,n_gen::
             'G'=>(x->repeat([x],n_gen_printed)))
             for i in eachindex(output_cst_names)
                 #! We do not output the lower levels.
-                df_res[:, output_cst_names[i]] = correction_function_cst[i](output_cst[i])
+                df_res[!, output_cst_names[i]] = correction_function_cst[i](output_cst[i])
             end
             last_column = ncol(df_res)
-
-            ## Add the column names 
-            for i in output_names
-                df_res[:, i] = zeros(n_gen_printed)
+            ## Add the column of variables
+            for i in 1:length(output_names)
+                T = eltype(empty_output[i])
+                df_res[!, output_names[i]] = Vector{T}(undef, n_gen_printed)
             end
             ## Create the function to calculate the position of the output
             calculate_position_output = i_gen -> floor(Int, (i_gen - gen_first_print) / print_every) + 1
 
         else
-            ##Create empty dataframe of the right type
-            #--- The type of output is either float if not at the level of generation (since we do the mean) or given by the output_example
-            type_output = [i[] for i in  nested_eltype.(correct_output_for_n_trait(output_example))]
-            for (i, lvl) in enumerate(level_output)
-                if lvl in ['i', 'I', 'p']
-                    type_output[i] = Float64[]
-                end
-            end
-            df_res = DataFrame([repeat([Int64[]],2);[i[] for i in  nested_eltype.(output_cst)];type_output],
+            ## Create empty dataframe of the right type
+            # #--- The type of output is either float if not at the level of generation (since we do the mean) or given by the output_example
+            # type_output = [i[] for i in  _leaf_type.(correct_output_for_n_trait(output_example))]
+            # for (i, lvl) in enumerate(level_output)
+            #     if lvl in ['i', 'I', 'p']
+            #         type_output[i] = Float64[]
+            #     end
+            # end
+            df_res = DataFrame([repeat([Int64[]],2);[i[] for i in  _leaf_type.(output_cst)];empty_output],
             ["i_simul","gen",output_cst_names...,output_names...]
             )
             ## Create the function to add the constant output. 
             correction_function_cst=replace(type_output_cst,
             'g'=>(x->x),
             'G'=>(x->[x]))
-            base_output = i_gen -> [[i_simul], [i_gen],[correction_function_cst[i](output_cst[i]) for i in eachindex(output_cst_names)]...]
+            get_base_output = (i_gen, n_pop) -> [[i_simul], [i_gen],[correction_function_cst[i](output_cst[i]) for i in eachindex(output_cst_names)]...]
         end
     #*** Results at the PATCH level
     elseif de == 'p'
@@ -310,18 +303,19 @@ function init_data_output(de,output_names::Vector{String},output_example,n_gen::
         'G'=>(x->fill(x,n_patch)),
         'p'=>(x->x),
         'i'=>(x->mean.(x)),
-        'I'=>(x->mean.(collect(Iterators.partition(x,n_pop)))))
-
+        ## Apply only to case where patch = 1 but we keep the format of vector of vector
+        'I'=>(x->[mean(x)]))
+        # 'I'=>(x->mean.(collect(Iterators.partition(x,n_pop)))))
+        ## with corresponding names
         output_names = string.(replace(level_output,'g'=>"",'G'=>"",'p'=>"",'i'=>"mean_",'I'=>"mean_"),output_names)
         #! We do not print the lower levels of details of the constant output
-        output_cst=output_cst[type_output_cst .∉ Ref(['i', 'I'])]
-        output_cst_names=output_cst_names[type_output_cst .∉ Ref(['i', 'I'])]
-        type_output_cst=type_output_cst[type_output_cst .∉ Ref(['i', 'I'])]
-
+        cst_to_keep =  type_output_cst .∈ Ref(['g', 'G','p'])
+        output_cst, output_cst_names, type_output_cst = getindex.((output_cst, output_cst_names, type_output_cst), Ref(cst_to_keep))
+        empty_output = [i[] for i in _leaf_type.([correction_function[i](correct_output_for_n_trait(output_example)[i]) for i in eachindex(correction_function)])]
         #--- Initialise dataFrame
         if n_cst
             total_length_output = n_gen_printed * n_patch
-            df_res = DataFrame(i_simul=repeat([i_simul], inner=total_length_output),
+            df_res = DataFrame(i_simul=repeat([i_simul], inner = total_length_output),
                 gen=repeat(gen_printed, inner=n_patch),
                 patch=repeat(1:n_patch, outer=n_gen_printed))
 
@@ -332,40 +326,35 @@ function init_data_output(de,output_names::Vector{String},output_example,n_gen::
             'G'=>(x->repeat([x],total_length_output)),
             'p'=>(x->repeat(x,outer=n_gen_printed)))
             for i in eachindex(output_cst_names)
-                #! We do not output the lower levels.
-                df_res[:, output_cst_names[i]] = correction_function_cst[i](output_cst[i])
+                df_res[!, output_cst_names[i]] = correction_function_cst[i](output_cst[i])
             end
-
             last_column = ncol(df_res)
-            ## Add the column names 
-            # for i in string.(replace(level_output,'g'=>"",'G'=>"",'p'=>"",'i'=>"mean_",'I'=>"mean_"),output_names)
-            #     df_res[:, i] = zeros(total_length_output)
-            # end
-            for i in output_names
-                df_res[:, i] = zeros(total_length_output)
+            ## Add the variables columns 
+            for i in 1:length(output_names)
+                T = eltype(empty_output[i])
+                df_res[!, output_names[i]] = Vector{T}(undef, total_length_output)
             end
             ## Create the function to calculate the position of the output
             calculate_position_output = i_gen -> (n_patch*(floor(Int,(i_gen-gen_first_print)/print_every))+1):n_patch*(1+floor(Int,(i_gen-gen_first_print)/print_every))
         else
             #-> Population size is not constant so we need to write down the constant output each time we want to save
             ##Create empty dataframe of the right type
-            #--- The type of output is either float if not at the level of generation (since we do the mean) or given by the output_example
-            type_output = [i[] for i in  nested_eltype.(correct_output_for_n_trait(output_example))]
-            for (i, lvl) in enumerate(level_output)
-                if lvl in ['i', 'I']
-                    type_output[i] = Float64[]
-                end
-            end
-            df_res = DataFrame([repeat([Int64[]],3);[i[] for i in  nested_eltype.(output_cst)];type_output],
-            ["i_simul","gen","patch",output_cst_names...,output_names...]
-            )
+            # #--- The type of output is either float if not at the level of generation (since we do the mean) or given by the output_example
+            # type_output = [i[] for i in  _leaf_type.(correct_output_for_n_trait(output_example))]
+            # for (i, lvl) in enumerate(level_output)
+            #     if lvl in ['i', 'I']
+            #         type_output[i] = Float64[]
+            #     end
+            # end
+            df_res = DataFrame([repeat([Int64[]],3);[i[] for i in  _leaf_type.(output_cst)];empty_output],
+            ["i_simul","gen","patch",output_cst_names...,output_names...])
             ## Create the function to add the constant output. 
             correction_function_cst=replace(type_output_cst,
             'g'=>(x->repeat(x,n_patch)),
             'G'=>(x->repeat([x],n_patch)),
             'p'=>(x->x))
     
-            base_output = i_gen -> [fill(i_simul, n_patch),
+            get_base_output = (i_gen, n_pop) -> [fill(i_simul, n_patch),
             fill(i_gen, n_patch),
             collect(1:n_patch),
             [correction_function_cst[i](output_cst[i]) for i in eachindex(output_cst_names)]...]
@@ -379,6 +368,7 @@ function init_data_output(de,output_names::Vector{String},output_example,n_gen::
         'p'=>(x->repeat(x,inner=n_pop)),
         'i'=>(x-> reduce(vcat,x)),
         'I'=>(x-> x))
+        empty_output = [i[] for i in _leaf_type.([correction_function[i](correct_output_for_n_trait(output_example)[i]) for i in eachindex(correction_function)])]
         #--- Initialise dataFrame
         if n_cst
             total_length_output = n_gen_printed * n_patch * n_pop
@@ -396,34 +386,38 @@ function init_data_output(de,output_names::Vector{String},output_example,n_gen::
             'I'=>(x->repeat(x,outer=n_gen_printed)))
             corrected_output_cst = [correction_function_cst[i](output_cst[i]) for i in eachindex(correction_function_cst)]
             for i in eachindex(output_cst_names)
-                df_res[:, output_cst_names[i]] = corrected_output_cst[i]
+                df_res[!, output_cst_names[i]] = corrected_output_cst[i]
             end
 
             last_column = ncol(df_res)
-            ## Add the column names
-            for i in output_names
-                df_res[:, i] = zeros(total_length_output)
+            ## Add the variables columns 
+            for i in 1:length(output_names)
+                T = eltype(empty_output[i])
+                df_res[!, output_names[i]] = Vector{T}(undef, total_length_output)
             end
 
             ## Create the function to calculate the position of the output
             calculate_position_output = i_gen ->(n_patch*n_pop*(floor(Int,(i_gen-gen_first_print)/print_every))+1):n_patch*n_pop*(1+floor(Int,(i_gen-gen_first_print)/print_every))
-  
         else
+            #-> Varying population size
+            #-> This is the only case where the size of the output is not constant so we need to take group sizes as input
+            #--- Create the vector of functions to apply to each output 
+            correction_function = replace(level_output,
+            'g'=>((x, group_sizes)->fill(x[1],sum(group_sizes))),
+            'G'=>((x, group_sizes)->fill(x,sum(group_sizes))),
+            'p'=>((x, group_sizes)-> collect(Iterators.flatten((fill(x[i],group_sizes[i]) for i in 1:n_patch)))),
+            'i'=>((x, group_sizes)-> reduce(vcat,x)),
+            'I'=>((x, group_sizes)-> x))
             ##Create empty dataframe of the right type
-            df_res = DataFrame([repeat([Int64[]],4);[i[] for i in  nested_eltype.(output_cst)];[i[] for i in  nested_eltype.(correct_output_for_n_trait(output_example))]],
+            df_res = DataFrame([repeat([Int64[]],4);[i[] for i in  _leaf_type.(output_cst)];empty_output],
             ["i_simul","gen","patch","ind",output_cst_names...,output_names...]
             )
             ## Create the function to add the constant output. 
-            correction_function_cst=replace(type_output_cst,
-            'g'=>(x->repeat(x,n_patch*n_pop)),
-            'G'=>(x->repeat([x],n_patch*n_pop)),
-            'p'=>(x->repeat(x,inner=n_pop)),
-            'i' => (x->reduce(vcat,x)), 
-            'I' => (x->x) )
-            base_output = i_gen -> [fill(i_simul, n_patch * n_pop),
-            fill(i_gen, n_patch * n_pop),
-            repeat(1:n_patch, inner=n_pop),
-            repeat(1:n_pop*n_patch),
+            correction_function_cst= correction_function
+            get_base_output = (i_gen, n_pop) -> [fill(i_simul,  sum(n_pop)),
+            fill(i_gen, sum(n_pop)),
+            collect(Iterators.flatten((fill(i, n_pop[i]) for i in 1:length(n_pop)))),
+            collect(Iterators.flatten((collect(1:n_pop[i]) for i in 1:length(n_pop)))),
             [correction_function_cst[i](output_cst[i]) for i in eachindex(output_cst_names)]...]
         end
     end
@@ -434,6 +428,7 @@ function init_data_output(de,output_names::Vector{String},output_example,n_gen::
             if should_it_print(i_gen,gen_first_print,print_every) == true
                 corrected_output_for_n_trait = correct_output_for_n_trait(output)
                 corrected_output = [correction_function[i](corrected_output_for_n_trait[i]) for i in eachindex(correction_function)]
+                #@show corrected_output_for_n_trait
                 for i in eachindex(corrected_output)
                     df[calculate_position_output(i_gen), last_column+i] = corrected_output[i]
                 end
@@ -447,14 +442,23 @@ function init_data_output(de,output_names::Vector{String},output_example,n_gen::
                 if isempty(output[1])
                     return
                 end
-                ##Preprocess the output
+                ## Here we add a single row. For append, we need a vector while for the n_cst = true, scalar are ok.
+                group_sizes = length.(output[2]) 
+
                 if de == 'g'
                     corrected_output = map(x->[x],[correction_function[i](corrected_output_for_n_trait[i]) for i in eachindex(correction_function)])
-                else
+                elseif de == 'p'
                     corrected_output = [correction_function[i](corrected_output_for_n_trait[i]) for i in eachindex(correction_function)]
+                elseif de == 'i'
+                    #-> Size of output varies
+                    corrected_output = [correction_function[i](corrected_output_for_n_trait[i], group_sizes) for i in eachindex(correction_function)]
                 end
+                # @show output[1]
+                # @show group_sizes
+                # @show get_base_output(i_gen,group_sizes)
+                # @show corrected_output
                 append!(df,
-                rename(DataFrame([base_output(i_gen);
+                rename(DataFrame([get_base_output(i_gen,group_sizes);
                 corrected_output],:auto),
                 names(df))
                 )
@@ -465,6 +469,66 @@ function init_data_output(de,output_names::Vector{String},output_example,n_gen::
     return(df_res, save_data_to_df)
 end
 
-function should_it_print(i_gen,n_print,j_print)
-    (i_gen-n_print) % j_print == 0 && i_gen >= n_print
+should_it_print(i_gen,n_print,j_print) = (i_gen-n_print) % j_print == 0 && i_gen >= n_print
+
+function _filter_cst_for_de(type_output_cst::Vector{Char}, de::Char)
+    drop = de == 'g' ? ['i','I','p'] :
+           de == 'p' ? ['i','I']     :
+                       Char[]
+    keep = .!(type_output_cst .∈ Ref(drop))
+    return type_output_cst[keep]
 end
+
+
+"""
+    make_output_corrector(first_output::AbstractVector) -> Function
+
+Return a function `correct(output)::Vector` that:
+- splits the first element (traits) into one vector per trait if the trait type is a Tuple,
+- otherwise returns the output unchanged.
+
+Examples
+--------
+# population: Vector{Tuple}
+correct = make_output_corrector([(0.1,0.2), (0.3,0.4)])
+correct([[ (0.1,0.2), (0.3,0.4) ], :foo])  # => [ [0.1,0.3], [0.2,0.4], :foo ]
+
+# metapopulation: Vector{Vector{Tuple}}
+correct = make_output_corrector([[(0.1,0.2)], [(0.3,0.4)]])
+correct([[ [(0.1,0.2)], [(0.3,0.4)] ], :foo])  # => [ [[0.1],[0.3]], [[0.2],[0.4]], :foo ]
+"""
+function make_output_corrector(z::AbstractVector)
+    T = _leaf_type(z) 
+    if T <: Tuple
+        n = fieldcount(T)
+        if z isa AbstractVector{<:AbstractVector}
+            # metapopulation: Vector{Vector{Tuple}}
+            return function (output)
+                z = output[1]  # Vector{Vector{Tuple}}
+                per_trait = [map(p -> getfield.(p, i), z) for i in 1:n]
+                [per_trait; output[2:end]]
+            end
+        else
+            # population: Vector{Tuple}
+            return function (output)
+                z = output[1]  # Vector{Tuple}
+                per_trait = float.([getfield.(z, i) for i in 1:n])
+                [per_trait; output[2:end]]
+            end
+        end
+    else
+        #-> Single trait
+        return identity
+    end
+end
+    # if _leaf_type(output_example[1]) <: Tuple
+    #     n_trait = fieldcount(_leaf_type(output_example[1]))
+    #     output_names = [["z"*string(i) for i in 1:n_trait]; output_names[2:end]]
+    #     #@ To be clean, we should reorganize them as a vector of vectors each time so it has the same format as a metapop.
+    #     #@ However, our saver can deal with this kind of data too.
+    #     correct_output_for_n_trait = output -> [collect(invert(reduce(vcat, output[1]))); output[2:end]]
+    # else
+    #     n_trait = 1
+    #     #-> So no need to correct the output
+    #     correct_output_for_n_trait = output -> output
+    # end

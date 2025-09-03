@@ -32,7 +32,7 @@ function random_migration(metapop::Vector{Vector{T}}; mig_rate::Float64, kwargs.
         for j in eachindex(migrants[i])
             #-> and each migrant within this patch
             ##Make them go to another random patch
-            push!(new_metapop[random_int_except(1,n_patches,i)[1]],migrants[i][j])
+            push!(new_metapop[random_int_except(1,n_patches,i)],migrants[i][j])
         end
     end
     return(new_metapop)

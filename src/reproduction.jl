@@ -2,31 +2,6 @@
 #*** Reproduction functions
 #***********************************************
 
-"""
-    list_reproduction_methods()
-
-Prints a list of all available reproduction methods in the package, with one-line descriptions.
-
-This is useful for users who want to explore available options for evolutionary dynamics,
-such as Wright–Fisher, Moran, or explicit Poisson-based reproduction.
-"""
-function list_reproduction_methods()
-    println("Available reproduction methods:\n")
-
-    println("  reproduction_Moran_DB!              — Death–birth Moran reproduction (in-place)")
-    println("  reproduction_Moran_BD!              — Birth–death Moran reproduction (in-place)")
-    println("  reproduction_Moran_pairwise_learning! — Pairwise comparison imitation dynamics (in-place)")
-
-    println("  reproduction_WF                     — Wright–Fisher reproduction (asexual)")
-    println("  reproduction_WF!                     — Wright–Fisher reproduction in-place (asexual)")
-    println("  reproduction_WF_copy_group_trait    — Group-level trait copying based on group fitness")
-    println("  reproduction_WF_island_model_hard_selection — Reproduction with migration and global competition")
-    println("  reproduction_WF_island_model_soft_selection — Reproduction with migration and local competition")
-
-    println("  reproduction_explicit_poisson       — Poisson reproduction: explicit number of offspring per individual")
-
-    println("  reproduction_WF_sexual              — Sexual reproduction with free recombination")
-end
 
 """
     correct_fitness!(fitness)
@@ -36,102 +11,79 @@ Adds a small constant to all fitness values in-place to avoid issues when all in
 # Note
 - In-place modification is safe here because the true fitness values are already saved before reproduction is called (see `evol_model`).
 """
-function correct_fitness!(fitness::Vector{Float64})
-        @inbounds for i in eachindex(fitness)
-        fitness[i] += eps()
-    end
+function correct_fitness!(fitness, str_selection::Float64)
+    add_eps!(fitness)
+    power!(fitness,str_selection)
+    return nothing
 end
 
-function correct_fitness!(fitness::Vector{Vector{Float64}})
-    @inbounds for group in fitness
-        for i in eachindex(group)
-            group[i] += eps()
-        end
-    end
-end
-
-function corrected_fitness(fitness::Vector{Float64})
-        fitness .+ eps()
-end
-
-function corrected_fitness(fitness::Vector{Vector{Float64}})
-    corrected_fitness.(fitness)
-end
 
 #-----------------------------------------------
 #*** ASEXUAL REPRODUCTION
 #-----------------------------------------------
 
-function safe_sample(pop, weights::AbstractVector{<:Real}, n)
-    try
-        return sample(pop, Weights(weights), n)
-    catch e
-        if isa(e, ArgumentError) && occursin("found negative weight", sprint(showerror, e))
-            @error "Negative fitness value detected during reproduction." weights
-            error("Fitness values must be strictly positive for Wright–Fisher reproduction.\n" *
-                  "You likely passed raw payoffs instead of valid fitness values.\n" *
-                  "Consider transforming payoffs into fitness using:\n" *
-                  "  • exponential mapping:    fitness = exp.(β .* payoff)\n" *
-                  "  • baseline shift:         fitness = payoff .- minimum(payoff) + ϵ\n" *
-                  "  • or any transformation ensuring fitness > 0.")
-        else
-            rethrow(e)
-        end
+#*** Safe sampler
+## - spot negative weights
+## - copy mutable object (when genotype is a matrix) rather than copying the reference to avoid mutating multiple offspring at once
+
+function handle_neg_fitness!(e)
+    if isa(e, ArgumentError) && occursin("found negative weight", sprint(showerror, e))
+        @error "Negative fitness value detected during reproduction."
+        error("Fitness values must be strictly positive for Wright–Fisher reproduction.\n" *
+            "You likely passed raw payoffs instead of valid fitness values.\n" *
+            "Consider transforming payoffs into fitness using:\n" *
+            "  • exponential mapping:    fitness = exp.(β .* payoff)\n" *
+            "  • baseline shift:         fitness = payoff .- minimum(payoff) + ϵ\n" *
+            "  • or any transformation ensuring fitness > 0.")
+    else
+        rethrow(e)
     end
 end
 
-function safe_sample(pop, weights::AbstractVector{<:Real}, n; replace = true)
+function safe_sample(pop, w::AbstractWeights, n; replace::Bool = true)
     try
-        return sample(pop, Weights(weights), n; replace = replace)
+        return sample(pop, w, n; replace = replace)
     catch e
-        if isa(e, ArgumentError) && occursin("found negative weight", sprint(showerror, e))
-            @error "Negative fitness value detected during reproduction." weights
-            error("Fitness values must be strictly positive for Wright–Fisher reproduction.\n" *
-                  "You likely passed raw payoffs instead of valid fitness values.\n" *
-                  "Consider transforming payoffs into fitness using:\n" *
-                  "  • exponential mapping:    fitness = exp.(β .* payoff)\n" *
-                  "  • baseline shift:         fitness = payoff .- minimum(payoff) + ϵ\n" *
-                  "  • or any transformation ensuring fitness > 0.")
-        else
-            rethrow(e)
-        end
+        handle_neg_fitness!(e)
     end
 end
 
-function safe_sample!(pop, weights::AbstractVector{<:Real}, dest)
-    try
-        return sample!(pop, Weights(weights), dest)
+## When individuals are matrices, `sample` fills the new population with references to the same underlying matrices; 
+## this can lead to multiple individuals pointing to the same object, so mutating one would also mutate the others.
+function safe_sample(pop::AbstractVector{<:AbstractMatrix}, w::StatsBase.AbstractWeights, n; replace::Bool = true)
+    new_pop = try
+        new_pop = sample(pop, w, n; replace = replace) 
     catch e
-        if isa(e, ArgumentError) && occursin("found negative weight", sprint(showerror, e))
-            @error "Negative fitness value detected during reproduction." weights
-            error("Fitness values must be strictly positive for Wright–Fisher reproduction.\n" *
-                  "You likely passed raw payoffs instead of valid fitness values.\n" *
-                  "Consider transforming payoffs into fitness using:\n" *
-                  "  • exponential mapping:    fitness = exp.(β .* payoff)\n" *
-                  "  • baseline shift:         fitness = payoff .- minimum(payoff) + ϵ\n" *
-                  "  • or any transformation ensuring fitness > 0.")
-        else
-            rethrow(e)
-        end
+        handle_neg_fitness!(e)
+    end
+    @inbounds for i in eachindex(new_pop)
+        new_pop[i] = copy(new_pop[i])       # break aliasing so later mutation! does not touch parents
+    end
+    return new_pop
+end
+
+
+
+function safe_sample!(pop, w::StatsBase.AbstractWeights, dest; replace = true)
+    try
+        return sample!(pop, w, dest; replace = replace)
+    catch e
+        handle_neg_fitness!(e) 
     end
 end
 
-function safe_sample!(pop, weights::AbstractVector{<:Real}, dest; replace = true)
+## When individuals are matrices, `sample!` fills the new population with references to the same underlying matrices; 
+## this can lead to multiple individuals pointing to the same object, so mutating one would also mutate the others.
+function safe_sample!(pop::AbstractVector{<:AbstractMatrix}, w::StatsBase.AbstractWeights, dest::AbstractVector{<:AbstractMatrix}; replace::Bool = true)
     try
-        return sample!(pop, Weights(weights), dest; replace = replace)
+        sample!(pop, w, dest; replace = replace)   # fills dest with references
     catch e
-        if isa(e, ArgumentError) && occursin("found negative weight", sprint(showerror, e))
-            @error "Negative fitness value detected during reproduction." weights
-            error("Fitness values must be strictly positive for Wright–Fisher reproduction.\n" *
-                  "You likely passed raw payoffs instead of valid fitness values.\n" *
-                  "Consider transforming payoffs into fitness using:\n" *
-                  "  • exponential mapping:    fitness = exp.(β .* payoff)\n" *
-                  "  • baseline shift:         fitness = payoff .- minimum(payoff) + ϵ\n" *
-                  "  • or any transformation ensuring fitness > 0.")
-        else
-            rethrow(e)
-        end
+        handle_neg_fitness!(e)
     end
+    @inbounds for i in eachindex(dest)
+        dest[i] = copy(dest[i])       # break aliasing so later mutation! does not touch parents
+    end
+    return dest
 end
 
 
@@ -173,8 +125,7 @@ mut_kwargs = (; sigma_m=0.05, boundaries=(0.0, 1.0))
 reproduction_Moran_DB!(pop, fitness, str_selection, mu_m, mut_kwargs)
 """
 function reproduction_Moran_DB!(pop::Vector{T},fitness::Vector{Float64},str_selection::Float64,mu_m, mut_kwargs; n_replacement = 1, kwargs...) where T
-    correct_fitness!(fitness)
-    power!(fitness,str_selection)
+    correct_fitness!(fitness,str_selection)
     pop[sample(eachindex(pop),n_replacement,replace=false)] = mutation.(safe_sample(pop,Weights(fitness),n_replacement),Ref(mu_m);mut_kwargs...)
 end
 
@@ -211,8 +162,7 @@ mut_kwargs = (; sigma_m=0.05, boundaries=(0.0, 1.0))
 reproduction_Moran_BD!(pop, fitness, str_selection, mu_m, mut_kwargs)
 """
 function reproduction_Moran_BD!(pop::Vector{T},fitness::Vector{Float64},str_selection::Float64,mu_m, mut_kwargs; n_replacement = 1, kwargs...) where T
-    correct_fitness!(fitness)
-    power!(fitness,str_selection)
+    correct_fitness!(fitness,str_selection)
     pop[safe_sample(eachindex(pop),Weights(1 ./ (fitness)),n_replacement,replace=false)] = mutation.(sample(pop,n_replacement),Ref(mu_m);mut_kwargs...)
 end
 
@@ -302,13 +252,14 @@ new_pop = reproduction_WF(pop, fitness, str_selection, mu_m, mut_kwargs)
 pop = [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]
 fitness = [[0.1, 0.2], [0.3, 10.0], [0.2, 0.1]]
 new_pop = reproduction_WF(pop, fitness, str_selection, mu_m, mut_kwargs)
+@btime reproduction_WF!(pop,new_pop,  fitness, str_selection, mu_m, mut_kwargs)
+
 """
 #--- Wright–Fisher: single population (vector)
 function reproduction_WF(pop::Vector{T},fitness::Vector{Float64},str_selection::Float64,mu_m, mut_kwargs; kwargs...) where T
     #@ Equivalent to Moran death–birth reproduction with n_replacement = population size,
     #@ but avoids explicitly sampling deaths, which improves performance.  
-    correct_fitness!(fitness)
-    power!(fitness,str_selection)
+    correct_fitness!(fitness,str_selection)
     offspring_pop = safe_sample(pop,Weights(fitness),length(pop))
     mutation!(offspring_pop,mu_m;mut_kwargs...)
     return(offspring_pop)
@@ -325,16 +276,30 @@ function reproduction_WF(pop::Vector{Vector{T}},fitness::Vector{Vector{Float64}}
 end
 
 #--- Wright–Fisher: in-place and single population (vector)
-function reproduction_WF!(pop::Vector{T},new_pop::Vector{T},fitness::Vector{Float64},str_selection::Float64,mu_m,mut_kwargs; kwargs...)where T
-    correct_fitness!(fitness)
-    power!(fitness,str_selection)
+function reproduction_WF!(pop::Vector{T},new_pop::Vector{T},fitness::Vector{Float64},str_selection::Float64,mu_m,mut_kwargs; kwargs...) where T
+    correct_fitness!(fitness,str_selection)
     safe_sample!(pop,Weights(fitness),new_pop)
     mutation!(new_pop,mu_m;mut_kwargs...)
 end
 
 #--- Wright–Fisher: in-place and metapopulation (vector of vectors)
-function reproduction_WF!(pop::Vector{Vector{T}},new_pop::Vector{Vector{T}},fitness::Vector{Vector{Float64}},str_selection::Float64,mu_m,mut_kwargs; kwargs...) where T
-    error("Reproduction Wright-Fisher in place not implemented for metapopulation yet")
+function reproduction_WF!(pop::Vector{Vector{T}}, new_pop::Vector{Vector{T}}, fitness::Vector{Vector{Float64}}, str_selection::Float64, mu_m, mut_kwargs; kwargs...) where {T}
+    n_groups = length(pop);group_size = length(pop[1]);
+    #--- Correct fitness
+    correct_fitness!(fitness,str_selection)
+    #--- Generate global pool of index of parents
+    parents_idx = safe_sample(1:(group_size * n_groups), StatsBase.Weights(reduce(vcat,fitness)), (group_size * n_groups))
+    #--- Reassign the offspring
+    for j in 1:n_groups
+        for i in 1:length(pop[j])
+            #--- Get the parent (need to transform i and j in a global index)
+            parent_id  = parents_idx[(j - 1) * group_size + i]        
+            #--- Assign (need to get the value of the parent using the global index to pair of index)                
+            new_pop[j][i] = pop[(parent_id - 1) ÷ group_size + 1   ][(parent_id - 1) % group_size + 1  ]
+        end
+    end
+    mutation!(new_pop,mu_m;mut_kwargs...)
+    return nothing
 end
 
 
@@ -422,8 +387,7 @@ new_pop = reproduction_WF_island_model_hard_selection(pop, fitness, str_selectio
 """
 function reproduction_WF_island_model_hard_selection(pop::Vector{Vector{T}},fitness::Vector{Vector{Float64}},str_selection::Float64,mu_m, mut_kwargs; mig_rate, kwargs...) where T
     group_size = length(pop[1]) ; n_groups = length(pop);
-    correct_fitness!(fitness)
-    power!(fitness,str_selection)
+    correct_fitness!(fitness,str_selection)
     migrants_flag=[rand(group_size) .< mig_rate for i in 1:n_groups]
     new_pop = [Vector{T}(undef, group_size) for i in 1:n_groups]
     for i in 1:n_groups
@@ -438,16 +402,13 @@ end
 function reproduction_WF_island_model_hard_selection!(pop::Vector{Vector{T}},new_pop::Vector{Vector{T}},fitness::Vector{Vector{Float64}},str_selection::Float64,mu_m, mut_kwargs; mig_rate, kwargs...) where T
     group_size = length(pop[1]) ; n_groups = length(pop);
     #--- Prep fitness
-    for j in eachindex(pop)
-        correct_fitness!(fitness[j])
-        power!(fitness[j],str_selection)
-    end
-
+    correct_fitness!(fitness,str_selection)
     if group_size > 1
         #--- Generate philopatric population by reproducing everyone in their patches (non-philopatric will be replaced later)
         for j in eachindex(pop)
             safe_sample!(pop[j],Weights(fitness[j]),new_pop[j])
         end
+
         #--- Now, we draw the non-philopatric offspring
         ## Buffer
         offspring_of_migrants = falses(group_size)
@@ -471,11 +432,12 @@ function reproduction_WF_island_model_hard_selection!(pop::Vector{Vector{T}},new
             #--- Assign parents
             new_pop[j][idx] = parents_of_migrants
         end
+
     else
         #-> For groups of 1, we use another method to avoid generating each time the other_group and other_fitness
         #--- Generate philopatric population by copying everyone (non-philopatric will be replaced later)
         for j in 1:length(pop)
-            new_pop[j][1] = pop[j][1]
+            new_pop[j][1] = copy(pop[j][1])
         end
         offspring_of_migrants = rand(length(pop)) .< mig_rate
         #--- We draw from the global pool and redraw if we get the same individual as parent (impossible since migration is true)
@@ -499,15 +461,10 @@ function reproduction_WF_island_model_hard_selection!(pop::Vector{Vector{T}},new
             new_pop[idx[t]][1] = pop[parents_of_migrants[t]][1]
         end
     end
-
     #--- Mutate
     mutation!(new_pop,mu_m;mut_kwargs...)
     return nothing
 end
-
-
-
-
 
 
 """
@@ -551,6 +508,9 @@ mut_kwargs = (; sigma_m = 0.5, boundaries = (0.0, 5.0))
 
 new_pop = reproduction_WF_island_model_soft_selection(pop, fitness, str_selection, mu_m, mut_kwargs; mig_rate = 0.1)
 
+@btime new_pop = reproduction_WF_island_model_soft_selection(pop, fitness, str_selection, mu_m, mut_kwargs; mig_rate = 0.1)
+
+
 """
 function reproduction_WF_island_model_soft_selection(pop::Vector{Vector{T}},fitness::Vector{Vector{Float64}},str_selection::Float64,mu_m, mut_kwargs; mig_rate, kwargs...) where T
     n_groups = length(pop); groups_size = length.(pop)
@@ -558,19 +518,40 @@ function reproduction_WF_island_model_soft_selection(pop::Vector{Vector{T}},fitn
     ## This also corrects fitness and check for negative fitness
     new_pop=_reproduction_WF_patchwise(pop, fitness, str_selection, mu_m,mut_kwargs)
     #--- Number of migrants per group
-    n_migrant_by_group =count.([rand(groups_size[i]) .< mig_rate for i in 1:n_groups])
+    n_migrant_by_group =sum.([rand(groups_size[i]) .< mig_rate for i in 1:n_groups])
     #--- For each migrant, identify from which patch they come from.
     patch_of_parent=[random_int_except(1,n_groups,i,n_migrant_by_group[i]) for i in 1:n_groups]
     #--- Select parent of migrant based on fitness
     for i in 1:n_groups
-        new_pop[i][sample(eachindex(pop[i]),n_migrant_by_group[i],replace=false)] = mutation.(vcat(sample.(pop[patch_of_parent[i]],StatsBase.Weights.(fitness[patch_of_parent[i]]),1)...),Ref(mu_m);mut_kwargs...)
+        if n_migrant_by_group[i] == 0
+            continue
+        end
+        new_pop[i][sample(eachindex(pop[i]),n_migrant_by_group[i],replace=false)] = mutation.(vcat(safe_sample.(pop[patch_of_parent[i]],StatsBase.Weights.(fitness[patch_of_parent[i]]),1)...),Ref(mu_m);mut_kwargs...)
     end
     return(new_pop)
 end
 
+function reproduction_WF_island_model_soft_selection!(pop::Vector{Vector{T}},new_pop::Vector{Vector{T}},fitness::Vector{Vector{Float64}},str_selection::Float64,mu_m, mut_kwargs; mig_rate, kwargs...) where T
+    n_groups = length(pop); groups_size = length.(pop)
+    #--- Local reproduction
+    ## This also corrects fitness and check for negative fitness
+    _reproduction_WF_patchwise!(pop, new_pop, fitness, str_selection, mu_m,mut_kwargs)
+    #--- Number of migrants per group
+    n_migrant_by_group =sum.([rand(groups_size[i]) .< mig_rate for i in 1:n_groups])
+    #--- For each migrant, identify from which patch they come from.
+    patch_of_parent=[random_int_except(1,n_groups,i,n_migrant_by_group[i]) for i in 1:n_groups]
+    #--- Select parent of migrant based on fitness
+    for i in 1:n_groups
+        if n_migrant_by_group[i] == 0
+            continue
+        end
+        new_pop[i][sample(eachindex(pop[i]),n_migrant_by_group[i],replace=false)] = mutation.(vcat(safe_sample.(pop[patch_of_parent[i]],StatsBase.Weights.(fitness[patch_of_parent[i]]),1)...),Ref(mu_m);mut_kwargs...)
+    end
+    return(nothing)
+end
 
 """
-    reproduction_WF_copy_group_trait(population, group_level_trait, fitness, str_selection, mu_m, mut_kwargs; group_fitness_fun, kwargs...)
+    reproduction_WF_copy_group_trait!(population, group_level_trait, fitness, str_selection, mu_m, mut_kwargs; group_fitness_fun, kwargs...)
 
 Simulates **Wright–Fisher reproduction**, where individuals adopt the group-level trait (e.g. an institutional rule) of a successful group.
 
@@ -602,20 +583,20 @@ group_level_trait = mean.(pop)
 mut_kwargs = (sigma_m = 0.1, boundaries = (0.0, 1.0))
 new_pop = reproduction_WF_copy_group_trait(pop, group_level_trait, fitness, 1.0, 0.1, mut_kwargs; group_fitness_fun = group_fitness_fun)
 """
-function reproduction_WF_copy_group_trait(population::Vector{Vector{T}},group_level_trait, fitness::Vector{Vector{Float64}},str_selection::Float64,mu_m,mut_kwargs;group_fitness_fun,kwargs...) where T
-    #--- Calculate group fitness 
-    group_fitness = StatsBase.weights(corrected_fitness(group_fitness_fun.(fitness)))
-    groups_size = length.(population)
-    #--- Instantiate new population
-    new_population = zeros.(groups_size)
-    #--- Sample offspring
-    for i in 1:length(population)
-        new_population[i] = safe_sample(group_level_trait,group_fitness,groups_size[i])
+function reproduction_WF_copy_group_trait!(population::Vector{Vector{T}},new_population::Vector{Vector{T}},group_level_trait, fitness::Vector{Vector{Float64}},str_selection::Float64,mu_m,mut_kwargs;group_fitness_fun,kwargs...) where T
+    #--- Calculate group fitness and selection weights
+    group_fitness = group_fitness_fun.(fitness)   
+    correct_fitness!(group_fitness,str_selection)
+    w_group_fitness = StatsBase.Weights(group_fitness)
+    groups_sizes = length.(population)
+    #--- Sample offspring per group into preallocated buffers
+    @inbounds for j in 1:length(population)
+        safe_sample!(group_level_trait, w_group_fitness, new_population[j])
     end
+    #--- Mutate offspring in place
     mutation!(new_population, mu_m; mut_kwargs...)
-    return new_population 
+    return nothing
 end
-
 
 
 #-----------------------------------------------
@@ -664,7 +645,7 @@ function reproduction_explicit_poisson(pop::Vector{T}, fitness::Vector{Float64},
             end
         catch e
             if isa(e, DomainError) && occursin("Poisson: the condition λ >= zero(λ) is not satisfied", sprint(showerror, e))
-                @error "Negative fitness value detected during reproduction." weights
+                @error "Negative fitness value detected during reproduction." 
                 error("Fitness values must be strictly positive for explicit reproduction.\n" *
                     "You likely passed raw payoffs instead of valid fitness values.\n" *
                     "Consider transforming payoffs into fitness using:\n" *
@@ -699,7 +680,7 @@ end
 
 Implements Wright–Fisher reproduction with sexual recombination across multiple loci.
 
-Each individual is represented as a vector of diploid loci, where each locus is a `Matrix{Float64}` representing the allele pair. Offspring are generated by sampling two parents from the population *with replacement*, with probabilities proportional to their fitness raised to `str_selection`. Each offspring inherits one allele per locus from each parent, followed by potential mutation.
+Each individual is represented as a vector of diploid loci, where each locus is a `Matrix{Float64}` representing the allele pair. Offspring are generated by sampling two parents from the population, with probabilities proportional to their fitness raised to `str_selection`. Each offspring inherits one allele per locus from each parent, followed by potential mutation.
 
 !!! note
     - The same parent may be paired with multiple others (no monogamy).
@@ -730,8 +711,7 @@ offspring = reproduction_WF_sexual(pop, fitness, 1.0, mu_m, mut_kwargs)
 """
 #--- Wright–Fisher: single population (vector)
 function reproduction_WF_sexual(pop,fitness::Vector{Float64},str_selection::Float64,mu_m,mut_kwargs; kwargs...)
-    correct_fitness!(fitness)
-    power!(fitness,str_selection)
+    correct_fitness!(fitness,str_selection)
     w_fitness = Weights(fitness)
     offspring = Vector{eltype(pop)}(undef, length(pop))
     for i in 1:length(fitness)
@@ -744,8 +724,7 @@ end
 
 #@ We use in-place mutation for genotype represented as matrix to gain performance
 function reproduction_WF_sexual(pop::Vector{Matrix},fitness::Vector{Float64},str_selection::Float64,mu_m,mut_kwargs; kwargs...)
-    correct_fitness!(fitness)
-    power!(fitness,str_selection)
+    correct_fitness!(fitness,str_selection)
     w_fitness = Weights(fitness)
     offspring = Vector{eltype(pop)}(undef, length(pop))
     for i in 1:length(fitness)
@@ -763,47 +742,100 @@ function reproduction_WF_sexual(pop,fitness::Vector{Vector{Float64}},str_selecti
     population = [collect(part) for part in Iterators.partition(metapopulation, length(pop[1]))]
 end
 
+#--- Wright–Fisher: in-place and single population (vector)
+function reproduction_WF_sexual!(pop, new_pop,fitness::Vector{Float64},str_selection::Float64,mu_m,mut_kwargs; kwargs...)
+    correct_fitness!(fitness,str_selection)
+    w_fitness = Weights(fitness)
+    for i in 1:length(fitness)
+        #--- Sample two parents randomly (without replacement)
+        parent1, parent2 = safe_sample(pop, w_fitness, 2, replace=false)
+        recombination!(new_pop[i],parent1,parent2)
+    end
+    #@ This is faster than doing in-place mutation for each genotype
+    mutation!(new_pop,mu_m;mut_kwargs...)
+    return(nothing)
+end
+
+#--- Wright–Fisher: in-place and metapopulation (vector of vectors)
+function reproduction_WF_sexual!(pop, new_pop, fitness::Vector{Vector{Float64}}, str_selection::Float64, mu_m, mut_kwargs; kwargs...)
+    group_size = length(pop[1]); n_groups   = length(pop)
+    correct_fitness!(fitness, str_selection) 
+    w_global = StatsBase.Weights(reduce(vcat, fitness)) 
+
+    #--- For each child in each group, sample two global parents and recombine in place
+    @inbounds for j in 1:n_groups
+        for i in 1:group_size
+            #--- sample two distinct parents from global pool
+            parent1_id, parent2_id = safe_sample(1:(group_size * n_groups), w_global, 2; replace=false)
+            #--- transform global index into group/within-group indices
+            g1 = (parent1_id - 1) ÷ group_size + 1; i1 = (parent1_id - 1) % group_size + 1
+            g2 = (parent2_id - 1) ÷ group_size + 1; i2 = (parent2_id - 1) % group_size + 1
+            #--- Recombine into preallocated child
+            recombination!(new_pop[j][i], pop[g1][i1], pop[g2][i2])
+        end
+    end
+    mutation!(new_pop, mu_m; mut_kwargs...)
+    return nothing
+end
+
+
 #--- Function to simulate free recombination
-function recombination(parent1,parent2)
-    hcat(sample.(eachrow(parent1)),sample.(eachrow(parent2)))
-end
-
+@inline recombination(parent1,parent2) = hcat(sample.(eachrow(parent1)),sample.(eachrow(parent2)))
 #--- Wrapper if multiple traits
-function recombination(parent1::Tuple,parent2::Tuple)
-    recombination.(parent1,parent2)
+@inline recombination(parent1::Tuple,parent2::Tuple) = recombination.(parent1,parent2)
+#--- In-place version
+#@ Faster if we don't specify matrix of Float
+@inline function recombination!(child::AbstractMatrix, parent1::AbstractMatrix, parent2::AbstractMatrix)
+    for r in axes(child, 1)
+        child[r, 1] = parent1[r, rand(axes(parent1, 2))]; child[r, 2] = parent2[r, rand(axes(parent2, 2))];
+    end
+    return nothing
+end
+#--- In-place version + tuple
+@inline function recombination!(child::Tuple{Vararg{<:AbstractMatrix,N}},parent1::Tuple{Vararg{<:AbstractMatrix,N}},parent2::Tuple{Vararg{<:AbstractMatrix,N}}) where {N}
+    for i in 1:N
+        recombination!(child[i], parent1[i], parent2[i])
+    end
+    return nothing
 end
 
-#-----------------------------------------------
-#*** Regulation functions
-#-----------------------------------------------
+#*** Programmatic registry of reproduction functions
+# Single source of truth for reproduction methods
+# applies_to ∈ (:pop, :metapop, :both)
+_REPRO_FUNS = [
+    (name = :reproduction_Moran_DB!,                f = reproduction_Moran_DB!,                desc = "Death–birth Moran (in-place)",                       needs = Symbol[],                    applies_to = :pop),        # single population only
+    (name = :reproduction_Moran_BD!,                f = reproduction_Moran_BD!,                desc = "Birth–death Moran (in-place)",                        needs = Symbol[],                    applies_to = :pop),        # single population only
+    (name = :reproduction_Moran_pairwise_learning!, f = reproduction_Moran_pairwise_learning!, desc = "Pairwise comparison imitation (in-place)",            needs = Symbol[],                    applies_to = :pop),        # single population only
 
-"""
-    regulation(pop, max_pop_size)
+    (name = :reproduction_WF,                       f = reproduction_WF,                       desc = "Wright–Fisher reproduction",                          needs = Symbol[],                    applies_to = :both),       # has Vector and Vector{Vector} methods
+    (name = :reproduction_WF!,                      f = reproduction_WF!,                      desc = "Wright–Fisher reproduction (in-place)",               needs = Symbol[],                    applies_to = :both),       # has Vector and Vector{Vector} methods
 
-Regulates population size by randomly removing individuals if necessary.
+    (name = :reproduction_WF_island_model_hard_selection,  f = reproduction_WF_island_model_hard_selection,  desc = "Island model, hard selection, global competition", needs = [:mig_rate],              applies_to = :metapop),    # metapop only
+    (name = :reproduction_WF_island_model_hard_selection!, f = reproduction_WF_island_model_hard_selection!, desc = "Island model, hard selection, global competition (in-place)", needs = [:mig_rate], applies_to = :metapop),    # metapop only
+    (name = :reproduction_WF_island_model_soft_selection,  f = reproduction_WF_island_model_soft_selection,  desc = "Island model, soft selection, local competition",  needs = [:mig_rate],              applies_to = :metapop),    # metapop only
+    (name = :reproduction_WF_island_model_soft_selection!, f = reproduction_WF_island_model_soft_selection!, desc = "Island model, soft selection, local competition (in-place)",  needs = [:mig_rate], applies_to = :metapop),    # metapop only
 
-If the population `pop` exceeds `max_pop_size`, a subset of individuals is sampled uniformly
-at random (without replacement) to reduce the population to the allowed size. If the population
-is already within the limit, it is returned unchanged.
+    (name = :reproduction_explicit_poisson,         f = reproduction_explicit_poisson,         desc = "Explicit number of offspring (Poisson)",              needs = Symbol[],                    applies_to = :both),       # vector and wrapper for metapop
 
-### Arguments
-- `pop::Vector{<:Any}`: Trait values for each individual.
-- `max_pop_size::Int`: Maximum allowed population size.
+    (name = :reproduction_WF_sexual,                f = reproduction_WF_sexual,                desc = "Wright–Fisher, sexual recombination",                 needs = [:n_loci],                   applies_to = :both),       # single and metapop overloads
+    (name = :reproduction_WF_sexual!,                f = reproduction_WF_sexual!,                desc = "Wright–Fisher, sexual recombination (in-place)",                 needs = [:n_loci],                   applies_to = :both),       # single and metapop overloads
 
-### Returns
-- `Vector{<:Any}`: Regulated population of size ≤ `max_pop_size`.
+    # Requires extra positional args not wired by evol_model. Keep listed for completeness.
+    (name = :reproduction_WF_copy_group_trait!,      f = reproduction_WF_copy_group_trait!,      desc = "Copy group-level trait using group fitness",          needs = [:group_level_trait, :group_fitness_fun], applies_to = :metapop),
+]
 
-### Example
-```julia
-pop = [1.0, 2.0, 3.0, 4.0, 5.0]
-regulated = regulation(pop, 3)
-length(regulated) ≤ 3  # true
+list_reproduction_functions() = _REPRO_FUNS
 
-"""
-function regulation(pop,max_pop_size)
-    if length(pop) > max_pop_size
-        return(sample(pop,max_pop_size,replace=false))
-    else
-        return(pop)
+# Pretty-printer driven by the registry
+function list_reproduction_methods(io::IO=stdout)
+    println(io, "Available reproduction methods\n")
+    w = maximum(length(string(x.name)) for x in _REPRO_FUNS)
+    for x in _REPRO_FUNS
+        scope = x.applies_to === :both ? "pop + metapop" :
+                x.applies_to === :pop  ? "pop" :
+                                         "metapop"
+        n = string(x.name)
+        pad = repeat(" ", w - length(n) + 2)
+        println(io, "  ", n, pad, "- ", x.desc, "  [", scope, "]")
     end
 end

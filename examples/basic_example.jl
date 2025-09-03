@@ -35,6 +35,7 @@ parameters_example = (
 
 res = evol_model(parameters_example, dummy_fitness_function, reproduction_WF)
 
+
 #-----------------------------------------------------------
 #*** 2. Gaussian Fitness Function
 #    Demonstrates setting parameters and including an additional output to be saved
@@ -63,7 +64,6 @@ parameters_example = Dict(
     :sigma => 1.0
 )
 
-res = evol_model(parameters_example, gaussian_fitness_function, reproduction_WF)
 
 res = evol_model(parameters_example, gaussian_fitness_function, reproduction_WF)
 @with res plot(:gen, :mean_mean_z, ylims = [0, 1])
@@ -491,24 +491,3 @@ res = evol_model(parameters_example, gaussian_fitness_function!, reproduction_WF
 @btime res = evol_model(parameters_example, gaussian_fitness_function, reproduction_WF);
 @btime res = evol_model(parameters_example, gaussian_fitness_function!, reproduction_WF!)
 
-
-
-function threshold_public_good_game!(z::Vector{Vector{Bool}}, fitness::Vector{Vector{Float64}};
-                                     a, c, threshold, kwargs...)
-    for (group, fit) in zip(z, fitness)
-        n_player = length(group)
-        # group benefit if threshold reached
-        benefit = (sum(group) > threshold * n_player) ? a * n_player : 0.0
-        @inbounds for j in eachindex(group)
-            fit[j] = c + benefit - (group[j] ? c : 0.0)
-        end
-    end
-    return nothing
-end
-
-parameters_example = (z_ini = [true,false], mu_m = 0.001,
-n_gen = 100, n_ini = 50,n_patch=100, de = 'g', n_simul = 1, 
-a=2,c=1., threshold = 0.65)
-
-@btime res=evol_model(parameters_example,threshold_public_good_game,reproduction_WF)
-@btime res=evol_model(parameters_example,threshold_public_good_game!,reproduction_WF)

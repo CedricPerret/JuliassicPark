@@ -54,22 +54,15 @@ meta = [[[1.0, 1.1], [1.0, 1.2], [1.0, 1.3], [1.0, 1.4], [1.0, 1.5]],
         [[2.0, 2.1], [2.0, 2.2], [2.0, 2.3], [2.0, 2.4], [2.0, 2.5]]]
 initialise_population(meta, 5, 2, [[0.0, 3.0]], n_loci=2)
  """
-
-    
-
  function initialise_population(z_ini, n_ini::Int, n_patch::Int; boundaries=nothing, simplify = true, n_loci = 0)
-
-    
     n_trait = length(z_ini)
-
     ## We wrap the boundaries the time of the initialisation (cannot wrap the parameter before because with a single trait, population simplifies to scalar rather than tuple)
     if n_trait == 1 && boundaries[1] !== nothing
-        if !isa(boundaries[1],Vector) || !isa(boundaries[1],Tuple)
+        if !isa(boundaries[1],Vector) && !isa(boundaries[1],Tuple)
             #-> We standardise the input to get [[min,max]] or [(min,max)]
             boundaries = [boundaries]
         end
     end
-
     ##Check for each boundaries if it exists (otherwise it is a boolean)
     check_boundaries = boundaries .!= nothing
     
@@ -89,7 +82,7 @@ initialise_population(meta, 5, 2, [[0.0, 3.0]], n_loci=2)
         elseif length(z_ini[i]) == n_patch && length(z_ini[i][1]) == n_ini
             #-> It is the metapopulation
             ## Double splat in case there are multiple loci (we can splat a scalar in case of n_loci = 1)
-            if check_boundaries
+            if check_boundaries[i]
                 if any(vcat((z_ini[i]...)...) .> boundaries[i][2]) || any(vcat((z_ini[i]...)...) .< boundaries[i][1])
                     error("One of the (possible) initial value provided is out of bound.")
                 end
@@ -209,13 +202,15 @@ function preprocess_fitness_function(population, fitness_function,parameters, co
         ##If multiple traits,  invert so that we have a vector by output rather by individual [(o1_ind1,o2_ind1),(o1_ind2,o2_ind2)] => ([o1_ind1, o2_ind1], [o2_ind1, o2_ind2])
         ## Same logic at higher level.
         instanced_fitness_function = function(population; parameters...)
-            my_invert([my_invert(collect.(ensure_tuple.(fitness_function.(group; parameters...)))) for group in population])
+            #_my_invert([_my_invert(collect.(ensure_tuple.(fitness_function.(group; parameters...)))) for group in population])
+            invert([_my_invert(collect.(ensure_tuple.(fitness_function.(group; parameters...)))) for group in population])
+
         end
     elseif correction == 1
         ##If single trait,  vectorize if to put it as the only element of the vector output [o1_ind1,o1_ind2] => [[o1_ind1,o1_ind2]]
         ##If multiple traits,  invert so that we have a vector by output rather by individual [(o1_ind1,o2_ind1),(o1_ind2,o2_ind2)] => ([o1_ind1, o2_ind1], [o2_ind1, o2_ind2])
         instanced_fitness_function = function(population; parameters...)
-            my_invert(collect.(ensure_tuple.(fitness_function.(population; parameters...))))
+            _my_invert(collect.(ensure_tuple.(fitness_function.(population; parameters...))))
         end
     elseif correction == 0
         ##If single trait,  vectorize if to put it as the only element of the vector output [o1_ind1,o1_ind2] => [[o1_ind1,o1_ind2]]
@@ -415,8 +410,8 @@ function get_simulation_seed(parameters::Dict, i_simul::Int)
         if parameters[:n_simul] == 1
             return parameters[:seed]
         else
-            @assert isa(seed, AbstractVector) "If n_simul > 1, parameter :seed must be a vector of seeds"
-            @assert length(seed) == parameters[:n_simul] "Expected one seed per simulation"
+            @assert isa(parameters[:seed], AbstractVector) "If n_simul > 1, parameter :seed must be a vector of seeds"
+            @assert length(parameters[:seed]) == parameters[:n_simul] "Expected one seed per simulation"
             return parameters[:seed][i_simul]
         end
     else
@@ -775,7 +770,7 @@ A tuple of:
 
 # Requirements
 - Each derived value must match the resolution of model output:
-  - Single value (global),
+  - Single value (generation-level),
   - Vector of length `n_patch` (patch-level),
   - Vector of vectors with shape `(n_patch, n_ini)` (individual-level).
 - If resolution is individual-level, `parameters[:n_cst]` must be `true`.
@@ -789,6 +784,8 @@ function compute_derived_parameters!(parameters, additional_parameters; addition
     for (key, value) in additional_parameters
         @assert !haskey(parameters, key) "Cannot add constant parameter `:$key`: a parameter with this name already exists in the parameter dictionary."
         value_parameters = value(; parameters...)
+        ## In case a single value is obtained.
+        value_parameters = value_parameters isa AbstractVector ? value_parameters : [value_parameters]
         parameters[key] = value_parameters
         #--- Saving new parameters
         ##The new parameters are too long to print in the name of the output file but...

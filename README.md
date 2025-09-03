@@ -118,8 +118,8 @@ function my_fitness_function(ind; param1, param2, should_it_print = true)
 end
 ```
 
-!!! warning
-Avoid reusing variable names inside `@extras`. If a variable is already defined before the block, it will be overwritten with `nothing` when skipping computation.
+**Warning:** 
+Avoid reusing variable names inside `@extras`. If a variable is already defined before the block, it will be overwritten with `[]` when skipping computation.
 
 ---
 
@@ -249,35 +249,47 @@ Formatting conventions:
 
 
 
-
 ### 🧵 Parallelisation and Output Splitting
 
-The behavior of parallelisation and output formatting depends on two flags: `:write_file` and `:split_sweep`.
+JuliassicPark lets you run many simulations side by side. There are two questions:
+1) how to split the output files,
+2) how to spread the work across CPU cores or workers.
 
-- If `:write_file = false`:
-  - If `:split_sweep = false`, all results are combined into a single `DataFrame` (in memory).
-  - If `:split_sweep = true`, results are returned as a **vector of `DataFrame`s**, one per parameter set.
-  - The `:split_simul` flag is ignored in this case.
-
-- If `:write_file = true`, the `:split_sweep` and `:split_simul` flags control how results are saved to disk and how simulations are parallelised, as shown in the table below.
-
+Both are controlled by a few flags. The table below summarises what happens.
 
 | `:split_sweep` | `:split_simul` | Behaviour |
-|----------------|----------------|-----------|
-| `false`        | `false`        | All simulations and parameter sets are combined into a single `DataFrame` (or CSV file). When the number of simulations is high and memory usage is low (`de ≠ i`), runs are parallelized across threads. This mode is the safest and most memory-efficient option for small to medium jobs. |
-| `true`         | `false`        | Results from each parameter set are saved in a **separate file**. Simulations for a given set are run sequentially and written together. This parallelises over parameter sets when writing to file, and not otherwise.  |
-| `true`         | `true`         | Each simulation of each parameter set is saved in its **own file**. This allows **full parallelisation** over both parameter sets and simulations. This is the most scalable option for long or numerous runs. |
-| `false`        | `true`         | ❌ Not allowed. Each simulation would write to the same file, creating a conflict. An error is thrown if this configuration is used. |
+|---|---|---|
+| `false` | `false` | All simulations and parameter sets are combined into one DataFrame in memory, or one CSV if `:write_file = true`. When memory use is moderate (`de ≠ 'i'`), runs are parallelised across threads. |
+| `true`  | `false` | One file per parameter set. For each set, all replicates are run and written together. Parallelisation happens across parameter sets only. |
+| `true`  | `true`  | One file per replicate and per parameter set. This allows parallelisation across parameter sets and across replicates. This is the most scalable option for long sweeps. |
+| `false` | `true`  | Not allowed. All replicates would try to write to the same file. An error is raised. |
 
-This behaviour is implemented in `run_parameter_sweep_distributed(...)`, which automatically chooses the appropriate level of parallelisation and output format.
+This behaviour is implemented by `run_parameter_sweep_distributed(...)`, which chooses a safe plan based on `:write_file`, `:split_sweep`, and `:split_simul`. When different parameter sets are saved to the same file, the varying parameters are added as columns. When replicates are saved separately, the simulation ID is included in the filename.
 
-When simulations of different parameters are saved in the same file, the varying parameter is added to the output. When replicates are saved to separate files, the simulation ID is included in each filename.
+#### How work is executed
 
-🧠 **Best practice**:
-- Use `split_sweep = true, split_simul = true` for large parallel jobs on a cluster or multi-core machine.
-- Use `split_sweep = true` for readable, modular output files per parameter set.
-- Use `split_* = false` when the entire dataset is small enough to handle in memory, and you prefer a single output file.
+- Threads (shared memory).  
+  This is the default when results are kept in memory or when writing a single combined file. Threads are simple to use and fast for medium-sized jobs on one machine.
 
+- Distributed workers (separate processes).  
+  If you set `:distributed = true`, parameter sets and replicates can be sent to multiple workers. This is useful for large sweeps and cluster jobs. Each worker has its own memory and must be ready to run your model.
+
+In both cases the simulation core is the same: `evol_model` builds a per-run function, and `run_parameter_sweep_distributed` schedules many of these runs.
+
+#### Preparing distributed runs
+
+If you turn on `:distributed`, make sure every worker knows about your code and packages (see the [Julia manual on distributed computing]{https://docs.julialang.org/en/v1/manual/distributed-computing/}).
+
+```julia
+using Distributed
+addprocs(4)  # or what your machine or cluster provides
+
+@everywhere using JuliassicPark
+
+# Put your model code in a file so it can be loaded everywhere.
+# For example, my_model_code.jl defines `fitness_function`, `repro_function`, and `parameters`.
+@everywhere include("my_model_code.jl")
+```
 
 ---
 
@@ -287,10 +299,11 @@ Multiple traits are represented internally as tuples. You can include multiple t
 
 ```julia
 z_ini = (true, 0.2, 2.0)
-mu_m = [0.01, 0.01, 0.01]
-sigma_m = [nothing, 0.1, nothing]
+mu_m = (0.01, 0.01, 0.01)
+sigma_m = (nothing, 0.1, nothing)
 ```
 
+The same mutation rate is assumed for all trait if a single value `:mu_m` is provided.  
 You **must specify `nothing`** for traits where parameters like `:sigma_m` do not apply. Currently, there's no way to infer the trait type from the context alone.
 
 ---

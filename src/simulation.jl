@@ -130,8 +130,13 @@ function get_template_model(parameters_input, fitness_function, repro_function; 
 
         parameters = deepcopy(parameters_input)
 
+        #--- Initialise the population 
+        population = initialise_population(parameters[:z_ini], parameters[:n_ini], parameters[:n_patch]; boundaries = parameters[:boundaries], simplify = parameters[:simplify],n_loci = parameters[:n_loci])
+        
+
         #--- This is in case the user gives a single generator, not encapsulated in a vector because the expected input is a vector of generators for each trait. 
         if contains(give_me_my_name(repro_function), "sexual") && genotype_to_phenotype_mapping == identity
+            @assert all(T <: Float64 for T in _type_of_traits(population)) "Sexual reproduction with diploids is only implemented for continuous traits (Float64)"
             if parameters[:n_loci] == 1
                 println("With sexual reproduction, the genotype to phenotype mapping needs to be provided. In the case single locus, we assume average mapping with no dominance")
                 genotype_to_phenotype_mapping = average_mapping
@@ -143,11 +148,10 @@ function get_template_model(parameters_input, fitness_function, repro_function; 
                 genotype_to_phenotype_mapping = x -> additive_mapping(x,parameters[:delta])
             end
         end
-        calculate_phenotype = genotype_to_phenotype_mapping === identity ? identity : (pop -> _lift_map(genotype_to_phenotype_mapping, pop))
+        calculate_phenotype = genotype_to_phenotype_mapping === identity ? identity : (pop -> lift_map(genotype_to_phenotype_mapping, pop))
 
 
-        #--- Initialise the population 
-        population = initialise_population(parameters[:z_ini], parameters[:n_ini], parameters[:n_patch]; boundaries = parameters[:boundaries], simplify = parameters[:simplify],n_loci = parameters[:n_loci])
+
         #--- Initialise type of reproduction
         reproduction_mode = :pure
         new_population = deepcopy(population)
@@ -183,7 +187,7 @@ function get_template_model(parameters_input, fitness_function, repro_function; 
             fitness = vv(0.,population_phenotype)
             output = [[population_phenotype,fitness]; instanced_fitness_function(population_phenotype, fitness; parameters...)]
         end
-        @assert nested_eltype(output[2]) == Float64 "Fitness has to be of Float64 type"
+        @assert _leaf_type(output[2]) == Float64 "Fitness has to be of Float64 type"
 
         ## If fitness function returns a named tuple and no other output name specified, we get the names of the extras output.
         other_output_names = !isempty(parameters[:other_output_names]) ? parameters[:other_output_names] : extract_output_names(population_phenotype, fitness_function, parameters,correction)
@@ -195,11 +199,29 @@ function get_template_model(parameters_input, fitness_function, repro_function; 
         end
         
         df_res, saver = init_data_output(
-            only(parameters[:de]), [["z", "fitness"]; other_output_names],
+            parameters[:de], [["z", "fitness"]; other_output_names],
             output, parameters[:n_gen], parameters[:n_print], parameters[:j_print],
             i_simul, parameters[:n_patch], parameters[:n_ini], parameters[:n_cst];
             output_cst_names=cst_output_name, output_cst=cst_output
         )
+
+        ## We cannot use z_ini to calculate the n_trais as z_ini could be a population or metapopulation to initiate a single trait => we use the population
+        n_traits = typeof(_get_ind(population_phenotype)) <: Tuple ? length(_get_ind(population_phenotype)) : 1
+
+        if n_traits > 1
+            ## In case where only a single mutation rate is given, we assume that it is the same for all traits
+            if !(parameters[:mu_m] isa AbstractVector) && !(parameters[:mu_m] isa Tuple)
+                #-> A scalar for mutation rate has been provided
+                parameters[:mu_m] = fill(parameters[:mu_m], n_traits)
+            elseif length(parameters[:mu_m]) == 1
+                #-> A vector of size 1
+                parameters[:mu_m] = fill(only(parameters[:mu_m]), n_traits)
+            else
+                @assert length(parameters[:mu_m]) == n_traits "mu_m must be scalar or a vector of length $n_traits"
+            end
+
+        end
+
         ##Isolate parameters for mutation and reproduction function
         repro_kwargs_names = [:n_replacement,:transition_proba, :n_pop_by_class, :n_patch, :mig_rate,:group_fitness_fun,:n_loci]
         repro_kwargs = _filter_kwargs(parameters,repro_kwargs_names)
@@ -207,10 +229,8 @@ function get_template_model(parameters_input, fitness_function, repro_function; 
         mut_kwargs_names = [:sigma_m, :boundaries, :mutation_type,:bias_m]
         ## To avoid passing unnecessary or unused parameters (which could cause errors or reduce clarity), we explicitly filter only the relevant keyword arguments from the main `parameters` dictionary.
         mut_kwargs = prepare_kwargs_multiple_traits(parameters, mut_kwargs_names)
-        if length(parameters[:mu_m]) > 1
-            ## We need to give name to each set of parameter (by trait) so it can be given to kwargs... (and fit with other possible calls of mutation)
-            mut_kwargs = (; (Symbol("mutation_parameter_$(i)") => mut_kwargs[i] for i in eachindex(mut_kwargs))...)
-        end
+        ## We need to give name to each set of parameter (by trait) so it can be given to kwargs... (and fit with other possible calls of mutation)
+        n_traits > 1 && (mut_kwargs = (; (Symbol("mutation_parameter_$(i)") => mut_kwargs[i] for i in 1:n_traits)...))
 
         mig_kwargs_names = [:mig_rate]
         mig_kwargs = _filter_kwargs(parameters,mig_kwargs_names)
@@ -251,7 +271,7 @@ function get_template_model(parameters_input, fitness_function, repro_function; 
                 error("Population collapsed")
             end
             #--- Migrate
-            if migration_function != nothing
+            if migration_function !== nothing
                 population = migration_function(population; mig_kwargs...)
             end
         end
