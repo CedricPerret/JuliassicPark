@@ -303,7 +303,10 @@ mu_m = (0.01, 0.01, 0.01)
 sigma_m = (nothing, 0.1, nothing)
 ```
 
-The same mutation rate is assumed for all trait if a single value `:mu_m` is provided.  
+Mutation-related parameters (such as `:mu_m` and `:sigma_m`) can be given as a single value or as a tuple.
+- If a single value is provided, it is applied to all traits.
+- If different values are provided, provide a tuple of the same length as the number of traits.
+ 
 You **must specify `nothing`** for traits where parameters like `:sigma_m` do not apply. Currently, there's no way to infer the trait type from the context alone.
 
 ---

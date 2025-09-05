@@ -99,7 +99,7 @@ parameters_example = Dict(
     :sigma => 1.0,
     :j_print => 100
 )
-
+res = evol_model(parameters_example, gaussian_fitness_function, reproduction_WF)
 run_smoke_tests(parameters_example, gaussian_fitness_function)
 
 #*** Two traits float

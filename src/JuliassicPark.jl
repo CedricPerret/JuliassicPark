@@ -2,6 +2,7 @@ module JuliassicPark
 
 using SplitApplyCombine: invert
 using IterTools: partition
+#To avoid conflict on mean with StatsBase
 using Distributions
 using StatsBase
 using DataFrames
@@ -19,7 +20,7 @@ include("output.jl")
 include("mutation.jl")
 include("reproduction.jl")
 include("migration.jl")
-#--- Genotype to phenotype mapping e.g. useful for sexual reproduction
+#--- Genotype to phenotype mapping useful for sexual reproduction
 include("mapping.jl")
 #--- utility functions
 include("utils.jl")
@@ -41,7 +42,7 @@ random_int_except, remove_index, sample_except, create_interval, create_interval
 curve_plateau,curve_plateau_sublinear, curve_sigmoid, curve_sigmoid_decreasing,
 vv_empty,vv,vv_rand,vv_big,
 coef_linear_regression, normalised, random_pairing, random_grouping, argextreme, power!,
-get_parameters_from_sweep, lift_map,add_eps!,
+get_parameters_from_sweep, lift_map,add_eps!, get_ind,
 @extras
 
 end

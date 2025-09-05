@@ -135,7 +135,7 @@ end
 
 Simulates **birth–death Moran reproduction**:
 
-1. **Fitness-based death**: `n_replacement` individuals are selected proportional to fitness^`str_selection` to be removed.
+1. **Fitness-based death**: `n_replacement` individuals are selected inversely proportional to fitness^`str_selection` to be removed.
 2. **Random birth**: New individuals are drawn randomly and mutated.
 
 !!! note
@@ -227,7 +227,7 @@ Simulates **Wright–Fisher reproduction**, with optional support for metapopula
 
 !!! note
     - Population size remains constant.
-    - Reproduction is asexual. See `reproduction_WF_sexual_multilocus` for sexual reproduction.
+    - Reproduction is asexual. See `reproduction_WF_sexual` for sexual reproduction.
 
 # Arguments
 - `pop::Vector{<:Any}` or `Vector{Vector{<:Any}}`: Trait values for each individual.

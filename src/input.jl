@@ -3,7 +3,7 @@
 #-----------------------------------------------
 
 """
-    initialise_population(z_ini, n_ini, n_patch, boundaries; simplify = true, n_loci = 0)
+    initialise_population(z_ini, n_ini, n_patch; boundaries = nothing, simplify = true, n_loci = 0)
 
 Initialise a population
 
@@ -41,9 +41,11 @@ initialise_population([1.,2.,3.], 10, 2)
 initialise_population(Normal(0, 1), 5, 2; boundaries= [-1.0, 1.0], n_loci=2)
 """
  function initialise_population(z_ini, n_ini::Int, n_patch::Int; boundaries=nothing, simplify = true, n_loci = 0)
+    ## If call without going by evol_model
     n_trait = z_ini isa Tuple ? length(z_ini) : 1
     ## We wrap the boundaries the time of the initialisation (cannot wrap the parameter before because with a single trait, population simplifies to scalar rather than tuple)
     if n_trait == 1
+        ## For safety, this is already done in the evol_model
         if !isa(z_ini,Tuple)
             z_ini = (z_ini,)
         end
@@ -290,13 +292,13 @@ end
 function _infer_fitness_function_correction_by_signature(population,fitness_function::Function)
     ## See https://discourse.julialang.org/t/obtaining-parameter-types-for-a-function/62169/8
     arg_type = fieldtypes((methods(fitness_function).ms[1].sig))[2]
-    if arg_type <: Vector{<:Vector}
+    if arg_type <: AbstractVector{<:AbstractVector}
         if typeof(population) <: Vector{<:Vector}
             return 0
         elseif typeof(population) <: Vector
             return error("Fitness function requires at least a metapopulation")
         end
-    elseif arg_type <: Vector
+    elseif arg_type <: AbstractVector
         if typeof(population) <: Vector{<:Vector}
             return 1
         elseif typeof(population) <: Vector
@@ -495,110 +497,91 @@ Useful for selectively passing keyword arguments to functions.
 function _filter_kwargs(kwargs::Dict, accepted::Vector{Symbol})
     return (; (k => kwargs[k] for k in accepted if haskey(kwargs, k))...)
 end
-
 """
-    prepare_kwargs_multiple_traits(parameters::Dict{Symbol,Any}, kwarg_names::Vector{Symbol})
+    _prepare_kwargs_multiple_traits(parameters::Dict{Symbol,Any},
+                                    kwarg_names::Vector{Symbol},
+                                    n_traits::Int)
 
-This function start from `parameters`, identify the relevant parameters and transform it from a format where each keyword (e.g., `:sigma_m`) maps to a vector of values (one per trait), into a format where each trait has its own `NamedTuple` of keyword arguments. This is useful for functions that operate on one trait at a time.
+Extract and structure mutation-related keyword arguments for one or several traits.
+
+- If `n_traits == 1`, return a flat `NamedTuple` of the selected parameters.  
+- If `n_traits > 1`, build a per-trait `NamedTuple` and wrap them under keys
+  `:mutation_parameter_1`, `:mutation_parameter_2`, …  
+  Keys whose value is `nothing` for a given trait are omitted.
 
 # Arguments
-- `parameters`: Dictionary containing model parameters, including `:mu_m`, a vector whose length defines the number of traits.
-- `kwarg_names`: Names of keyword arguments to extract and restructure (e.g., `[:sigma_m, :bias_m]`).
+- `parameters::Dict{Symbol,Any}`: Dictionary of model parameters.
+- `kwarg_names::Vector{Symbol}`: Parameter names to extract.
+- `n_traits::Int`: Number of traits.
 
 # Returns
-- If only one trait: a flat `NamedTuple` of keyword arguments.
-- If multiple traits: a `Vector{NamedTuple}`, one per trait. Arguments with `nothing` are omitted from the corresponding trait.
+- `NamedTuple`:  
+  * Single trait → flat `NamedTuple`.  
+  * Multiple traits → `NamedTuple` of the form  
+    `(mutation_parameter_1 = (...,), mutation_parameter_2 = (...,), …)`.
 
 # Example
 ```julia
 parameters = Dict(
-    :mu_m => [0.001, 0.01],
+    :mu_m    => [0.001, 0.01],
     :sigma_m => [0.1, 0.2],
-    :bias_m => [0.0, nothing]
+    :bias_m  => [0.0, nothing]
 )
 kwarg_names = [:sigma_m, :bias_m]
 
-prepare_kwargs_multiple_traits(parameters, kwarg_names)
-# Returns:
-# [
-#   (sigma_m = 0.1, bias_m = 0.0),
-#   (sigma_m = 0.2,)
-# ]
-"""
-function prepare_kwargs_multiple_traits(parameters, kwarg_names::Vector{Symbol})
-    #--- Estimate the number of traits using the mutation rate vector
-    n_traits = length(parameters[:mu_m])
-    #--- Filter and collect available keyword arguments
-    base_kwargs = Dict()
-    for name in kwarg_names
-        if haskey(parameters, name)
-            val = parameters[name]
-            #--- Check: value must be a vector of length n_traits
-            if n_traits > 1
-                if length(val) != n_traits
-                    error("Parameter `$(name)` must be a vector of length $n_traits (same as `mu_m`). Use `nothing` for traits that don't need it.")
-                end
-            end
-            base_kwargs[name] = val
-        end
-    end
-
-    base_kwargs_nt = (; base_kwargs...)
-    #--- If there are multiple traits, split trait-specific parameters into one NamedTuple per trait
-    #--- Split each parameter by trait, keeping only non-`nothing` values per trait
-    if n_traits > 1
-        base_kwargs_nt = split_trait_kwargs(base_kwargs_nt, n_traits)
-    end
-    return base_kwargs_nt
-end
-
-"""
-    split_trait_kwargs(kwargs::NamedTuple, n_traits::Int) -> Vector{NamedTuple}
-
-Splits a `NamedTuple` of vectors into a vector of `NamedTuple`s, one per trait. Arguments with `nothing` at a given index are omitted from the corresponding trait.
-"""
-function split_trait_kwargs(kwargs::NamedTuple, n_traits::Int)
-    keys_vec = collect(keys(kwargs))
-    values_vec = collect(values(kwargs))
-    return [
-        NamedTuple{Tuple(k for (k, v) in zip(keys_vec, values_vec) if v[i] !== nothing)}(
-            (v[i] for (k, v) in zip(keys_vec, values_vec) if v[i] !== nothing)
-        )
-        for i in 1:n_traits
-    ]
-end
-
-"""
-    prepare_mut_kwargs_multiple_traits(parameters::Dict{Symbol,Any}, kwarg_names::Vector{Symbol}) -> NamedTuple
-
-Wraps trait-specific keyword arguments into a `NamedTuple` with keys `:mutation_parameter_1`, `:mutation_parameter_2`, etc., for compatibility with mutation functions expecting named keyword arguments per trait.
-
-# Arguments
-- `parameters`: Dictionary containing model parameters, including trait-specific entries like `:sigma_m` or `:bias_m`.
-- `kwarg_names`: Names of keyword arguments to extract and structure for each trait.
-
-# Returns
-A `NamedTuple` where each key is of the form `:mutation_parameter_i` and the value is a `NamedTuple` of keyword arguments for trait `i`.
-
-# Example
-```julia
-parameters = Dict(
-    :mu_m => [0.001, 0.01],
-    :sigma_m => [0.1, 0.2],
-    :bias_m => [0.0, 0.1]
-)
-kwarg_names = [:sigma_m, :bias_m]
-
-prepare_mut_kwargs_multiple_traits(parameters, kwarg_names)
+_prepare_kwargs_multiple_traits(parameters, kwarg_names, 2)
 # Returns:
 # (
 #   mutation_parameter_1 = (sigma_m = 0.1, bias_m = 0.0),
-#   mutation_parameter_2 = (sigma_m = 0.2, bias_m = 0.1)
+#   mutation_parameter_2 = (sigma_m = 0.2,)
 # )
+
 """
-function prepare_mut_kwargs_multiple_traits(parameters, kwarg_names)
-    mut_kwargs = prepare_kwargs_multiple_traits(parameters,kwarg_names)
-    mut_kwargs = (; (Symbol("mutation_parameter_$(i)") => mut_kwargs[i] for i in eachindex(mut_kwargs))...)
+function _prepare_kwargs_multiple_traits(parameters, kwarg_names::Vector{Symbol}, n_traits)
+    kwargs = _filter_kwargs(parameters, kwarg_names)
+    if n_traits == 1
+        return kwargs
+    else
+        per_trait = [ (; (k => v[i] for (k,v) in zip(keys(kwargs), values(kwargs)) if v[i] !== nothing)...) 
+                      for i in 1:n_traits ]
+        return (; (Symbol("mutation_parameter_$(i)") => per_trait[i] for i in 1:n_traits)...)
+    end
+end
+
+
+"""
+    _normalise_trait_parameters!(par::Dict{Symbol,Any}, names::Vector{Symbol}, n_traits::Int) -> Dict
+
+Coerces shapes of trait-related parameters:
+- If n_traits == 1: unwrap length-1 containers to scalars (except `:boundaries`, which may be a pair).
+- If n_traits > 1: replicate scalars or length-1 containers across traits; assert correct lengths.
+Special case: a single `[min, max]` (or `(min, max)`) for `:boundaries` is replicated per trait.
+"""
+function _normalise_trait_parameters!(parameters,kwargs_names, n_traits)
+    for kwarg_i in kwargs_names
+        haskey(parameters, kwarg_i) || continue
+        parameters[kwarg_i] === nothing && continue
+        if n_traits == 1
+            if parameters[kwarg_i] isa AbstractVector
+                if length(parameters[kwarg_i]) == 1
+                    #-> To guard against boundaries being a vector
+                    parameters[kwarg_i] = parameters[kwarg_i][1]
+                end
+            end
+        elseif n_traits > 1
+            if kwarg_i == :boundaries
+                #-> A single vector of boundary has been provided
+                if !isa(parameters[kwarg_i][1],Vector) && !isa(parameters[kwarg_i][1],Tuple)
+                    parameters[kwarg_i]= fill(parameters[kwarg_i], n_traits)
+                end
+            elseif !(parameters[kwarg_i] isa AbstractVector) && !(parameters[kwarg_i] isa Tuple)
+                #-> A scalar has been provided
+                parameters[kwarg_i] = fill(parameters[kwarg_i], n_traits)
+            else
+                @assert length(parameters[kwarg_i]) == n_traits "$kwarg_i must be scalar or a vector of length $n_traits"
+            end
+        end
+    end
 end
 
 

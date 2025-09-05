@@ -95,7 +95,7 @@ end
 
 
 """
-    get_mutation_distribution(x::Float64, ::Val{:type}; sigma_m, boundaries, kwargs...)
+    _get_mutation_distribution(x::Float64, ::Val{:type}; sigma_m, boundaries, kwargs...)
 
 Returns a truncated probability distribution centered around the trait value `x`, used to generate mutations.
 
@@ -165,6 +165,7 @@ Examples:
 pop = fill(0.5, 1000)
 mutation!(pop, 0.3; sigma_m=0.1, boundaries=(0.0, 1.0))
 mutation!(pop, 0.01; mutation_type=:gumbel, sigma_m=0.1, bias_m=0.2, boundaries=(0.0, 1.0))
+```
 """
 function mutation!(population::Vector{Float64},mu_m; mutation_type::Symbol = :normal, boundaries = (0.0, 1.0), kwargs...)
     T = Val(mutation_type)

@@ -124,12 +124,21 @@ function get_template_model(parameters_input, fitness_function, repro_function; 
             parameters[:z_ini] = tuple(parameters[:z_ini])
         end
     
+           
+        #--- Normalise the trait relevant parameters (depending of number of traits, need to unwrap or copy) + reorganise them in the right format
+        n_traits = length(parameters[:z_ini])
+        mut_kwargs_names = [:sigma_m, :boundaries, :mutation_type,:bias_m] 
+        _normalise_trait_parameters!(parameters,[:mu_m; mut_kwargs_names], n_traits)
+        ## Move from sigma_m = [sigma_m1,sigma_m2], bias_m = [bias_m1,bias_m2] to param_trait1 = [sigma_m = sigma_m1, bias_m=bias_m1]
+        ## which can be given as a whole to mutation
+        mut_kwargs = _prepare_kwargs_multiple_traits(parameters, mut_kwargs_names, n_traits)
+
         #--- Initialise the population 
         population = initialise_population(parameters[:z_ini], parameters[:n_ini], parameters[:n_patch]; boundaries = parameters[:boundaries], simplify = parameters[:simplify],n_loci = parameters[:n_loci])
 
         #--- This is in case the user gives a single generator, not encapsulated in a vector because the expected input is a vector of generators for each trait. 
         if contains(give_me_my_name(repro_function), "sexual") && genotype_to_phenotype_mapping == identity
-            @assert all(T <: Float64 for T in _type_of_traits(population)) "Sexual reproduction with diploids is only implemented for continuous traits (Float64)"
+            @assert all(T <: Float64 for T in _type_of_traits(parameters[:z_ini])) "Sexual reproduction with diploids is only implemented for continuous traits (Float64)"
             if parameters[:n_loci] == 1
                 println("With sexual reproduction, the genotype to phenotype mapping needs to be provided. In the case single locus, we assume average mapping with no dominance")
                 genotype_to_phenotype_mapping = average_mapping
@@ -198,32 +207,11 @@ function get_template_model(parameters_input, fitness_function, repro_function; 
             output_cst_names=cst_output_name, output_cst=cst_output
         )
 
-        ## z_ini has been wrapped in tuple in evol_model
-        n_traits = length(parameters[:z_ini])
 
-        if n_traits > 1
-            ## In case where only a single mutation rate is given, we assume that it is the same for all traits
-            if !(parameters[:mu_m] isa AbstractVector) && !(parameters[:mu_m] isa Tuple)
-                #-> A scalar for mutation rate has been provided
-                parameters[:mu_m] = fill(parameters[:mu_m], n_traits)
-            elseif length(parameters[:mu_m]) == 1
-                #-> A vector of size 1
-                parameters[:mu_m] = fill(only(parameters[:mu_m]), n_traits)
-            else
-                @assert length(parameters[:mu_m]) == n_traits "mu_m must be scalar or a vector of length $n_traits"
-            end
-
-        end
-
-        ##Isolate parameters for mutation and reproduction function
+        
+        ## To avoid passing unnecessary or unused parameters (which could cause errors or reduce clarity), we explicitly filter only the relevant keyword arguments from the main `parameters` dictionary.
         repro_kwargs_names = [:n_replacement,:transition_proba, :n_pop_by_class, :n_patch, :mig_rate,:group_fitness_fun,:n_loci]
         repro_kwargs = _filter_kwargs(parameters,repro_kwargs_names)
-
-        mut_kwargs_names = [:sigma_m, :boundaries, :mutation_type,:bias_m]
-        ## To avoid passing unnecessary or unused parameters (which could cause errors or reduce clarity), we explicitly filter only the relevant keyword arguments from the main `parameters` dictionary.
-        mut_kwargs = prepare_kwargs_multiple_traits(parameters, mut_kwargs_names)
-        ## We need to give name to each set of parameter (by trait) so it can be given to kwargs... (and fit with other possible calls of mutation)
-        n_traits > 1 && (mut_kwargs = (; (Symbol("mutation_parameter_$(i)") => mut_kwargs[i] for i in 1:n_traits)...))
 
         mig_kwargs_names = [:mig_rate]
         mig_kwargs = _filter_kwargs(parameters,mig_kwargs_names)
@@ -309,6 +297,7 @@ function run_parameter_sweep_distributed(fun, sweep, parameters)
     n = length(list_parameters_set)
     total = n*parameters[:n_simul]
     p = Progress(total, 1)
+    update!(p, 0)  # <-- Forces the bar to show immediately
     if parameters[:split_simul] && !parameters[:split_sweep] && !isempty(sweep)
         error("split_simul=true requires split_sweep=true to avoid file conflicts or ambiguity.")
     end
@@ -317,7 +306,6 @@ function run_parameter_sweep_distributed(fun, sweep, parameters)
         # -> No parallel write, accumulate everything
         #--- Generate data
         list_res = Vector{DataFrame}(undef, n)
-        update!(p, 0)  # <-- Forces the bar to show immediately
         if Threads.nthreads() == 1 || parameters[:n_simul] < 10 || parameters[:de] =='i'
             #-> Small enough or take too much memory to paralelise over threads.
             for i in 1:n
@@ -390,6 +378,7 @@ function run_parameter_sweep_distributed(fun, sweep, parameters)
                         id_simul = get_simulation_seed(parameters, i_simul)
                         res = fun(list_parameters_set[i], id_simul)
                         CSV.write(build_filepath(parameters[:name_model], list_parameters_set[i], parameters[:parameters_to_omit], ".csv", id_simul), res)
+                        next!(p)
                 end
             end
         elseif parameters[:split_sweep]
@@ -414,35 +403,12 @@ function run_parameter_sweep_distributed(fun, sweep, parameters)
                         CSV.write(filepath, res;
                                 append = i_simul > 1,
                                 writeheader = i_simul == 1)
+                        next!(p)
                     end
                 end
             end
         end
 
-
-        # # -> Parallelise only over parameter sets
-        #     channel = RemoteChannel(() -> Channel{Bool}(), 1)
-        #     @sync begin
-        #         @async while take!(channel)
-        #             next!(p)
-        #         end
-        #         @async begin
-        #             @distributed (+) for i in 1:n_steps
-        #                 df_res = DataFrame()
-        #                 for i_simul in 1:parameters[:n_simul]
-        #                     id_simul = get_simulation_seed(parameters, i_simul)
-        #                     res = fun(list_parameters_set[i], id_simul)
-        #                     append!(df_res, res)
-        #                 end
-        #                 CSV.write(build_filepath(parameters[:name_model], list_parameters_set[i], parameters[:parameters_to_omit], ".csv"), df_res)
-        #                 put!(channel, true)
-        #                 0
-        #             end
-        #             put!(channel, false) # this tells the printing task to finish
-        #         end
-        #     end
-        # end
-    
 
     return nothing
 

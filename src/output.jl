@@ -76,10 +76,10 @@ end
 """
 A macro for optionally computing and printing "extra" values inside a fitness function.
 
-The trick is that all variables assigned in the block are first initialized to `nothing`, so that they are always defined even if not computed. The expressions in the block are only executed if `should_it_print == true`.
+The trick is that all variables assigned in the block are first initialized to `[]`, so that they are always defined even if not computed. The expressions in the block are only executed if `should_it_print == true`.
 
 !!! warning
-    This macro will overwrite any existing variables of the same name with `nothing` if they are reassigned in the block. Avoid name collisions with earlier code.
+    This macro will overwrite any existing variables of the same name with `[]` if they are reassigned in the block. Avoid name collisions with earlier code.
 """
 macro extras(block)
     # Extract all top-level expressions (may include LineNumberNodes)
@@ -245,7 +245,10 @@ function init_data_output(de,output_names::Vector{String},output_example,n_gen::
         correction_function = replace(level_output,
         'g'=>(x->x[1]),
         'G'=>(x->x),
-        'p'=>(x->mean(x)),
+        #Case where we calculate for instance variance in a patch and then do the mean of that. 
+        #I don't see how we will get NaN at individual level for now so I did not implemented there.
+        #could be moved to n_cst = false
+        'p'=>(x->mean(filter(!isnan, x))),
         'i'=>(x->mean(vcat(x...))),
         'I'=>(x->mean(x)))
         ## with corresponding names

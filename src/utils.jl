@@ -127,19 +127,51 @@ my_isempty(vec::Vector) = isempty(vec)
 #-----------------------------------------------
 
 """
-    invert_3D(vvv::Vector{Vector{Vector{T}}}) -> Vector{Vector{Vector{T}}}
+    invert_3D(piv::AbstractVector{<:AbstractVector{<:Union{AbstractVector,Tuple}}})
 
-Reorganizes a nested structure from `[variable][patch][individual]` to `[patch][individual][variable]`. 
-Supports different numbers of individuals per patch.
-
-Applying `invert_3D` twice returns the original structure:
-`invert_3D(invert_3D(vvv)) == vvv`
+Reorganize from [patch][individual][variable] to [variable][patch][individual].
+Allows different numbers of individuals per patch.
+Throws if the number of variables differs across individuals within a patch.
+If there are zero variables everywhere, returns an empty outer vector.
 """
-function invert_3D(vvv::Vector{Vector{Vector{T}}}) where T
-    V = length(vvv)
-    P = length(vvv[1])
-    [[[vvv[v][p][n] for v in 1:V] for n in 1:length(vvv[1][p])] for p in 1:P]
+function invert_3D(piv::AbstractVector{<:AbstractVector{<:Union{AbstractVector,Tuple}}})
+    P = length(piv)
+
+    # infer number of variables V from the first nonempty (p, n)
+    V = 0
+    @inbounds for p in 1:P
+        for n in eachindex(piv[p])
+            V = length(piv[p][n])
+            V > 0 && break
+        end
+        V > 0 && break
+    end
+    # if V == 0, everything is empty on the variable axis
+    V == 0 && return Vector{Vector{Vector{Any}}}()  # []
+
+    # consistency check: every (p, n) must have length V
+    @inbounds for p in 1:P
+        for n in eachindex(piv[p])
+            len = length(piv[p][n])
+            len == V || throw(ArgumentError("inconsistent number of variables at patch=$p individual=$n; expected $V, got $len"))
+        end
+    end
+
+    [ [ [ piv[p][n][v] for n in eachindex(piv[p]) ]
+        for p in 1:P ]
+      for v in 1:V ]
 end
+
+
+# function invert_3D(piv::AbstractVector{<:AbstractVector{<:Union{AbstractVector,Tuple}}})
+#     P = length(piv)                         # patches
+#     Vidx = eachindex(piv[1][1])             # variable indices (tuple- or vector-safe)
+#     [ [ [ piv[p][n][v] for n in eachindex(piv[p]) ]
+#         for p in 1:P ]
+#       for v in Vidx ]
+# end
+
+
 
 """
     _my_invert(vv)
@@ -253,11 +285,10 @@ function normalised(f::Function, bounds; npoints::Int = 1024)
 end
 
 """
-    add_eps(vec)
+    add_eps!(vec)
 
 Add a small constant (`eps()`) to all entries of a vector, in place.
-Useful to avoid zeros when they would cause numerical issues (e.g. in
-sampling or logarithms).
+Useful to avoid zeros when they would cause numerical issues (e.g. in sampling or logarithms).
 """
 function add_eps!(vec::Vector{Float64})
         @inbounds for i in eachindex(vec)
@@ -325,18 +356,42 @@ nested_eltype(d) # Any
 @inline _leaf_type(T::Type) = T <: AbstractArray ? _leaf_type(eltype(T)) : T
 @inline _leaf_type(x) = _leaf_type(typeof(x))
 
-function _type_of_traits(population)
-    T = _leaf_type(population)
-    ## If not tuple, we use _leaf_type to get the type in case it is a matrix
-    T <: Tuple ? _leaf_type.(collect(fieldtypes(T))) : [_leaf_type(T)]    
-end
+# function _type_of_traits(population)
+#     T = _leaf_type(population)
+#     ## If not tuple, we use _leaf_type to get the type in case it is a matrix
+#     T <: Tuple ? _leaf_type.(collect(fieldtypes(T))) : [_leaf_type(T)]    
+# end
+
 
 """
-    _get_ind(x)
+    trait_types(z_ini) -> Vector{DataType}
+
+Infer per-trait value types from `z_ini`. Works with scalars, vectors, nested vectors,
+matrices, tuples, and distributions. For array-valued traits, returns the leaf element type.
+
+Infer the value type you would get at runtime:
+1) use eltype(x) if available
+2) else try one `rand(x)` if defined (works for Distributions)
+3) else fall back to typeof(x)
+
+Returns a vector of types, one per trait (tuples => multiple traits, otherwise one).
+"""
+function _type_of_traits(z_ini)
+    _single(x)::DataType = _leaf_type(
+        Base.hasmethod(eltype, Tuple{typeof(x)}) ? eltype(x) :
+        Base.hasmethod(rand,   Tuple{typeof(x)}) ? typeof(rand(x)) :
+                                                   typeof(x)
+    )
+    return z_ini isa Tuple ? [_single(ti) for ti in z_ini] : [_single(z_ini)]
+end
+
+
+"""
+    get_ind(x)
 
 Give back the inner element. useful to get an individual whether it is in a population or metapop. Note that it stops at tuple. 
 """
-@inline _get_ind(x) = x isa AbstractArray ? (isempty(x) && error("Empty container"); _get_ind(x[1])) : x
+@inline get_ind(x) = x isa AbstractVector ? (isempty(x) && error("Empty container"); get_ind(x[1])) : x
 
 """
     my_allequal(itr)
