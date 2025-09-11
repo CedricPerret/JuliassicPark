@@ -7,7 +7,7 @@
 #-----------------------------------------------
 
 """
-    string_abbreviate(x)
+    _abbreviate(x)
 
 Converts a number, string, or distribution into a short string. This is useful to avoid unreadable long name file.
 
@@ -17,7 +17,7 @@ Converts a number, string, or distribution into a short string. This is useful t
 
 Used for output filenames or compact parameter summaries.
 """
-function string_abbreviate(x)
+function _abbreviate(x)
     if x isa Real
         if x >= 1000
             return(string((x/1000))*"k")
@@ -26,6 +26,8 @@ function string_abbreviate(x)
         else
             return(string(round(x,digits=5)))
         end
+    elseif x isa Vector
+        return string(round.(x,digits=5))
     elseif x isa String
         if any(occursin.([".csv",".txt"],x))
             #findlast return nothing. We use something to change it to 0
@@ -54,17 +56,17 @@ function _build_filename(wd::String, parameters::Dict, parameters_to_omit::Vecto
         end
     end
     #--- Generate name of the file with -key=value for each parameter (sorted for reproducibility), with abbreviated values
-    name_file = join(["-" * string(k) * "=" * string_abbreviate(v) for (k, v) in sort(parameters_copy)], "")
+    name_file = join(["-" * string(k) * "=" * _abbreviate(v) for (k, v) in sort(parameters_copy)], "")
 end
 
 #--- Public function: returns full file path
-function build_filepath(wd::String, parameters::Dict, parameters_to_omit::Vector{Symbol}, format::String; swept=Dict{Symbol,Vector}())
+function _build_filepath(wd::String, parameters::Dict, parameters_to_omit::Vector{Symbol}, format::String; swept=Dict{Symbol,Vector}())
     name_file = _build_filename(wd, parameters, parameters_to_omit, format; swept=swept)
     return wd * name_file * format
 end
 
 #--- Variant for split_simul=true: appends simulation ID
-function build_filepath(wd::String,parameters::Dict,parameters_to_omit::Array{Symbol,1},format::String,i_simul::Int64; swept=Dict{Symbol,Vector}())
+function _build_filepath(wd::String,parameters::Dict,parameters_to_omit::Array{Symbol,1},format::String,i_simul::Int64; swept=Dict{Symbol,Vector}())
     name_file = _build_filename(wd, parameters, parameters_to_omit, format; swept=swept)
     return wd * name_file * "-S="*string(i_simul)*format
 end
@@ -101,7 +103,7 @@ macro extras(block)
 end
 
 """
-    infer_variable_resolution(output::Vector; n_patch::Int = 1)
+    _infer_variable_resolution(output::Vector; n_patch::Int = 1)
 
 Identifies the resolution of the variable output in the evolutionary model, that is whether it is measured at the generation, group (patch), or individual level.
 
@@ -128,14 +130,14 @@ These types account for different ways users may return outputs from a model. Fo
 ```julia
 test = [1, [1, 2], [[1, 2, 3], [4, 5, 6]], [1, 2, 3, 4, 5, 6]]
 
-infer_variable_resolution(test, n_patch=2)
+_infer_variable_resolution(test, n_patch=2)
 # → ['G', 'p', 'i', 'I']
 
-infer_variable_resolution(test)
+_infer_variable_resolution(test)
 # → ['G', 'g', 'i', 'I']
 
 """
-function infer_variable_resolution(output;n_patch=1)
+function _infer_variable_resolution(output;n_patch=1)
     level_of_detail = Vector{Char}(undef, length(output))
         for (i,o) in enumerate(output)
             if !isa(o, Vector)
@@ -229,14 +231,14 @@ function init_data_output(de,output_names::Vector{String},output_example,n_gen::
     #--- Multiple traits?
     ## If yes, the first vector needs to be decoupled into one vector per trait.
     #@show output_example
-    correct_output_for_n_trait = make_output_corrector(output_example[1])
+    correct_output_for_n_trait = _make_output_corrector(output_example[1])
     n_trait = fieldcount(_leaf_type(output_example[1]))
     if n_trait > 1
         output_names = [["z"*string(i) for i in 1:n_trait]; output_names[2:end]]
     end
     #--- Identify the resolution of the variables measured
-    level_output = infer_variable_resolution(correct_output_for_n_trait(output_example),n_patch=n_patch)
-    type_output_cst = infer_variable_resolution(output_cst,n_patch=n_patch)
+    level_output = _infer_variable_resolution(correct_output_for_n_trait(output_example),n_patch=n_patch)
+    type_output_cst = _infer_variable_resolution(output_cst,n_patch=n_patch)
 
     ## Each output is modified (correction_function) to fit the resolution required by the user.
     #*** Results required at the generation level
@@ -252,7 +254,7 @@ function init_data_output(de,output_names::Vector{String},output_example,n_gen::
         'i'=>(x->mean(vcat(x...))),
         'I'=>(x->mean(x)))
         ## with corresponding names
-        output_names=string.(replace(level_output,'g'=>"",'G'=>"",'p'=>"mean_",'i'=>"mean_mean_",'I'=>"mean_mean_"),output_names)
+        output_names=string.(replace(level_output,'g'=>"",'G'=>"",'p'=>"mean_",'i'=>"global_mean_",'I'=>"global_mean_"),output_names)
         #! We do not print the lower levels of details of the constant output
         cst_to_keep =  type_output_cst .∈ Ref(['g', 'G'])
         output_cst, output_cst_names, type_output_cst = getindex.((output_cst, output_cst_names, type_output_cst), Ref(cst_to_keep))
@@ -484,7 +486,7 @@ end
 
 
 """
-    make_output_corrector(first_output::AbstractVector) -> Function
+    _make_output_corrector(first_output::AbstractVector)
 
 Return a function `correct(output)::Vector` that:
 - splits the first element (traits) into one vector per trait if the trait type is a Tuple,
@@ -493,26 +495,26 @@ Return a function `correct(output)::Vector` that:
 Examples
 --------
 # population: Vector{Tuple}
-correct = make_output_corrector([(0.1,0.2), (0.3,0.4)])
+correct = _make_output_corrector([(0.1,0.2), (0.3,0.4)])
 correct([[ (0.1,0.2), (0.3,0.4) ], :foo])  # => [ [0.1,0.3], [0.2,0.4], :foo ]
 
 # metapopulation: Vector{Vector{Tuple}}
-correct = make_output_corrector([[(0.1,0.2)], [(0.3,0.4)]])
+correct = _make_output_corrector([[(0.1,0.2)], [(0.3,0.4)]])
 correct([[ [(0.1,0.2)], [(0.3,0.4)] ], :foo])  # => [ [[0.1],[0.3]], [[0.2],[0.4]], :foo ]
 """
-function make_output_corrector(z::AbstractVector)
+function _make_output_corrector(z::AbstractVector)
     T = _leaf_type(z) 
     if T <: Tuple
         n = fieldcount(T)
         if z isa AbstractVector{<:AbstractVector}
-            # metapopulation: Vector{Vector{Tuple}}
+            #-> metapopulation: Vector{Vector{Tuple}}
             return function (output)
                 z = output[1]  # Vector{Vector{Tuple}}
                 per_trait = [map(p -> getfield.(p, i), z) for i in 1:n]
                 [per_trait; output[2:end]]
             end
         else
-            # population: Vector{Tuple}
+            #-> population: Vector{Tuple}
             return function (output)
                 z = output[1]  # Vector{Tuple}
                 per_trait = float.([getfield.(z, i) for i in 1:n])
@@ -524,14 +526,3 @@ function make_output_corrector(z::AbstractVector)
         return identity
     end
 end
-    # if _leaf_type(output_example[1]) <: Tuple
-    #     n_trait = fieldcount(_leaf_type(output_example[1]))
-    #     output_names = [["z"*string(i) for i in 1:n_trait]; output_names[2:end]]
-    #     #@ To be clean, we should reorganize them as a vector of vectors each time so it has the same format as a metapop.
-    #     #@ However, our saver can deal with this kind of data too.
-    #     correct_output_for_n_trait = output -> [collect(invert(reduce(vcat, output[1]))); output[2:end]]
-    # else
-    #     n_trait = 1
-    #     #-> So no need to correct the output
-    #     correct_output_for_n_trait = output -> output
-    # end

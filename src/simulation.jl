@@ -117,16 +117,22 @@ function get_template_model(parameters_input, fitness_function, repro_function; 
 
         parameters = deepcopy(parameters_input)
 
+        n_traits = 1
+        if parameters[:z_ini] isa AbstractDataFrame
+            n_traits = length(filter(c -> startswith(string(c), "z"), names(parameters[:z_ini])))
+            push!(parameters[:parameters_to_omit], :z_ini)
         ## Standardise z_ini
-        # Be careful, it still generates a population where each individual is a real, not a tuple. it is faster. The standardisation is useful for the initialisation
-        if !isa(parameters[:z_ini], Tuple)
-            #-> A single trait but z_ini is not a tuple. We ensure `z_ini` is always a tuple, even if the user provides a scalar (e.g. 0.5).
-            parameters[:z_ini] = tuple(parameters[:z_ini])
+        else
+            if !isa(parameters[:z_ini], Tuple)
+                #-> A single trait but z_ini is not a tuple. We ensure `z_ini` is always a tuple, even if the user provides a scalar (e.g. 0.5).
+                parameters[:z_ini] = tuple(parameters[:z_ini])
+            end
+            n_traits = length(parameters[:z_ini])
         end
-    
-           
+        ## If it continues previous simulations, the first generation is already contained in the previous dataframe, so we do "skip it"
+        (parameters[:z_ini] isa AbstractDataFrame && parameters[:n_print] == 1) && (parameters[:n_print] += 1)
+
         #--- Normalise the trait relevant parameters (depending of number of traits, need to unwrap or copy) + reorganise them in the right format
-        n_traits = length(parameters[:z_ini])
         mut_kwargs_names = [:sigma_m, :boundaries, :mutation_type,:bias_m] 
         _normalise_trait_parameters!(parameters,[:mu_m; mut_kwargs_names], n_traits)
         ## Move from sigma_m = [sigma_m1,sigma_m2], bias_m = [bias_m1,bias_m2] to param_trait1 = [sigma_m = sigma_m1, bias_m=bias_m1]
@@ -256,6 +262,15 @@ function get_template_model(parameters_input, fitness_function, repro_function; 
                 population = migration_function(population; mig_kwargs...)
             end
         end
+        if parameters[:z_ini] isa AbstractDataFrame
+            df_first = parameters[:z_ini]
+            df_res.gen .+= maximum(df_first.gen)
+            ## We duplicated the last/first generation so we remove it here.
+            append!(df_first, df_res; promote=true, cols=:union)        
+            ## Homogeneise the id_simul    
+            df_first.i_simul .= df_first.i_simul[1]
+            df_res = df_first
+        end
         return df_res
     end
     return model
@@ -352,7 +367,7 @@ function run_parameter_sweep_distributed(fun, sweep, parameters)
         ## Then either write the whole or give it back
         if parameters[:write_file]
             #-> Concatenate and save
-            CSV.write(build_filepath(parameters[:name_model], parameters, parameters[:parameters_to_omit], ".csv"; swept=sweep), vcat(list_res...))
+            CSV.write(_build_filepath(parameters[:name_model], parameters, parameters[:parameters_to_omit], ".csv"; swept=sweep), vcat(list_res...))
             return nothing
         elseif parameters[:split_sweep]
             return list_res
@@ -370,14 +385,14 @@ function run_parameter_sweep_distributed(fun, sweep, parameters)
                         i, i_simul = jobs[k]
                         id_simul = get_simulation_seed(parameters, i_simul)
                         res = fun(list_parameters_set[i], id_simul)
-                        CSV.write(build_filepath(parameters[:name_model], list_parameters_set[i], parameters[:parameters_to_omit], ".csv", id_simul), res)
+                        CSV.write(_build_filepath(parameters[:name_model], list_parameters_set[i], parameters[:parameters_to_omit], ".csv", id_simul), res)
                 end
             else
                 Threads.@threads for k in eachindex(jobs)
                         i, i_simul = jobs[k]
                         id_simul = get_simulation_seed(parameters, i_simul)
                         res = fun(list_parameters_set[i], id_simul)
-                        CSV.write(build_filepath(parameters[:name_model], list_parameters_set[i], parameters[:parameters_to_omit], ".csv", id_simul), res)
+                        CSV.write(_build_filepath(parameters[:name_model], list_parameters_set[i], parameters[:parameters_to_omit], ".csv", id_simul), res)
                         next!(p)
                 end
             end
@@ -385,7 +400,7 @@ function run_parameter_sweep_distributed(fun, sweep, parameters)
             # -> Parallelise only over parameter sets
             if parameters[:distributed]
                 @sync @distributed for i in 1:n
-                    filepath = build_filepath(parameters[:name_model],list_parameters_set[i],parameters[:parameters_to_omit],".csv")
+                    filepath = _build_filepath(parameters[:name_model],list_parameters_set[i],parameters[:parameters_to_omit],".csv")
                     for i_simul in 1:parameters[:n_simul]
                         id_simul = get_simulation_seed(parameters, i_simul)
                         res = fun(list_parameters_set[i], id_simul)
@@ -396,7 +411,7 @@ function run_parameter_sweep_distributed(fun, sweep, parameters)
                 end
             else
                 Threads.@threads for i in 1:n
-                    filepath = build_filepath(parameters[:name_model],list_parameters_set[i],parameters[:parameters_to_omit],".csv")
+                    filepath = _build_filepath(parameters[:name_model],list_parameters_set[i],parameters[:parameters_to_omit],".csv")
                     for i_simul in 1:parameters[:n_simul]
                         id_simul = get_simulation_seed(parameters, i_simul)
                         res = fun(list_parameters_set[i], id_simul)

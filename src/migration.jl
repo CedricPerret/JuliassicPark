@@ -2,7 +2,6 @@
 #*** Migrations function
 #***********************************************
 
-
 """
     random_migration(metapop; mig_rate)
 
@@ -37,3 +36,33 @@ function random_migration(metapop::Vector{Vector{T}}; mig_rate::Float64, kwargs.
     end
     return(new_metapop)
 end
+
+
+#*** Programmatic registry of migration functions
+# Single source of truth for migration methods
+_MIGRATION_FUNS = [
+    (name = :random_migration,
+     f = random_migration,
+     desc = "Independent migration to a random other patch",
+     needs = [:mig_rate]),
+]
+
+list_migration_functions() = _MIGRATION_FUNS
+
+# Pretty-printer driven by the registry
+function list_migration_methods(io::IO=stdout)
+    println(io, "Available migration methods\n")
+    if isempty(_MIGRATION_FUNS)
+        println(io, "  (none registered)")
+        return
+    end
+    funs = sort(_MIGRATION_FUNS; by = x -> String(x.name))
+    w = maximum(length(string(x.name)) for x in funs)
+    for x in funs
+        n = string(x.name)
+        pad = repeat(" ", w - length(n) + 2)
+        println(io, "  ", n, pad, "- ", x.desc)
+    end
+end
+
+

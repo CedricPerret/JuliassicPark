@@ -5,42 +5,57 @@
 """
     initialise_population(z_ini, n_ini, n_patch; boundaries = nothing, simplify = true, n_loci = 0)
 
-Initialise a population
+Initialise a population.
 
-# Arguments
-- `z_ini`: A vector of generators for each trait. Can be a vector of (or a single element of)
-    - Distributions.
-    - A single value which would be given to all individuals.
-    - A vector to draw randomly from (of a different size than the number of individuals in one patch)
-    - A metapopulation.
-- `n_ini`: Number of individuals per patch.
-- `n_patch`: Number of patches.
-- `boundaries`: A vector or list of vectors containing the lower and upper bounds for each trait. 
-- `simplify`: Boolean flag to simplify the output if there is only one patch (default: true). The simplified output is faster to process by other functions. However, it provides less consistent dimensions of output and function needs to take this into account.
-- `n_loci`: Number of loci.
+Arguments
+- z_ini: Source for trait values. Accepts:
+    - Number (copied to all individuals)
+    - AbstractVector (sampled; if length == 1 it is treated as a single individual to copy)
+    - Distributions.Distribution (sampled; truncated if boundaries are given)
+    - Tuple of per-trait sources, one entry per trait
+    - AbstractDataFrame or any Tables.jl table with columns :gen, :patch, and :z or :z1, :z2, ...
+      In this case the last generation is used. The table is authoritative and n_ini, boundaries, and n_loci are ignored.
+- n_ini::Int: Number of individuals per patch when sampling or copying.
+- n_patch::Int: Number of patches.
+- boundaries: Per-trait bounds. For one trait pass [min, max] or (min, max). For multiple traits pass one [min, max] per trait.
+- simplify::Bool: If true and n_patch == 1, return a single vector of individuals. Faster for downstream functions, but outputs have less uniform dimensions.
+- n_loci::Int: Number of loci for diploids. If > 0, each individual stores an n_loci × 2 genotype per trait.
 
-# Returns
-- `population`: A nested array or a simplified array representing the population, depending on the `simplify` flag.
+Returns
+- population: A vector of patches, each a vector of individuals. If simplify == true and n_patch == 1, returns a single vector.
+  Individuals are Float64 for one trait, or tuples for multiple traits. With n_loci > 0, entries are genotype arrays.
 
-# Examples
+Examples
 
 # One trait, scalar input
-initialise_population(1.0, 5, 2)
+initialise_population(1.0, 5, 2; boundaries = [0.0, 2.0])
 
 # Distribution input with bounds
 initialise_population(Normal(0, 1), 5, 2; boundaries = [-1.0, 1.0])
 
-# Group to replicate
-example_group = [1.,2.,3.,4.,5.]
-initialise_population(example_group, 5, 2)
-
 # Draw randomly from a vector
-initialise_population([1.,2.,3.], 10, 2)
+initialise_population([1.0, 2.0, 3.0], 5, 2)
+
+# Two traits, independent sources
+initialise_population((Normal(0, 1), [0.5, 1.0, 1.5]), 5, 2; boundaries = [(-2.0, 2.0), (0.0, 2.0)])
 
 # Diploid with two loci
-initialise_population(Normal(0, 1), 5, 2; boundaries= [-1.0, 1.0], n_loci=2)
+initialise_population(Normal(0, 1), 5, 2; boundaries = [-1.0, 1.0], n_loci = 2)
+
 """
- function initialise_population(z_ini, n_ini::Int, n_patch::Int; boundaries=nothing, simplify = true, n_loci = 0)
+function initialise_population(z_ini::AbstractDataFrame, n_ini::Int, n_patch::Int; boundaries=nothing, simplify=true, n_loci=0)
+    # This is better than guessing from the vector dimensions as if n_cst = false, we can't infer when the input needs to be sampled or taken as it is.
+    population = get_pop_at_last_gen(z_ini)
+    if simplify && n_patch == 1 && length(population) == 1
+        population = population[1]
+    end
+    return population
+end
+
+function initialise_population(z_ini, n_ini::Int, n_patch::Int; boundaries=nothing, simplify = true, n_loci = 0)
+    # if Tables.istable(z_ini)
+    #     return initialise_population(DataFrame(z_ini), n_ini, n_patch; boundaries=boundaries, simplify=simplify, n_loci=n_loci)
+    # end
     ## If call without going by evol_model
     n_trait = z_ini isa Tuple ? length(z_ini) : 1
     ## We wrap the boundaries the time of the initialisation (cannot wrap the parameter before because with a single trait, population simplifies to scalar rather than tuple)
@@ -57,7 +72,8 @@ initialise_population(Normal(0, 1), 5, 2; boundaries= [-1.0, 1.0], n_loci=2)
         end
     end
     ##Check for each boundaries if it exists (otherwise it is a boolean)
-    check_boundaries = boundaries .!= nothing
+    # Safety if boundary is a single nothing
+    check_boundaries = boundaries === nothing ? fill(false, n_trait) : (boundaries .!= nothing)
     
     # Have to do this method if we want to allow for the user to also give directly initial population (which can be a metapop or not)
     generators = Vector{Function}(undef, n_trait)
@@ -67,21 +83,20 @@ initialise_population(Normal(0, 1), 5, 2; boundaries= [-1.0, 1.0], n_loci=2)
     for i in 1:n_trait
         if typeof(z_ini[i]) <: Distributions.Distribution
             #-> It is a distribution
-            if n_loci == 0
-                generators[i] = x -> [rand(truncated(x,boundaries[i][1],boundaries[i][2]), n_ini) for _ in 1:n_patch]
-            else
-                generators[i] = x -> [[rand(truncated(x,boundaries[i][1],boundaries[i][2]), n_loci,ploidy) for _ in 1:n_ini] for _ in 1:n_patch]
-            end
-        elseif length(z_ini[i]) == n_patch && length(z_ini[i][1]) == n_ini
-            #-> It is the metapopulation
-            ## Double splat in case there are multiple loci (we can splat a scalar in case of n_loci = 1)
             if check_boundaries[i]
-                if any(vcat((z_ini[i]...)...) .> boundaries[i][2]) || any(vcat((z_ini[i]...)...) .< boundaries[i][1])
-                    error("One of the (possible) initial value provided is out of bound.")
+                if n_loci == 0
+                    generators[i] = x -> [rand(truncated(x, boundaries[i][1], boundaries[i][2]), n_ini) for _ in 1:n_patch]
+                else
+                    generators[i] = x -> [[rand(truncated(x, boundaries[i][1], boundaries[i][2]), n_loci, ploidy) for _ in 1:n_ini] for _ in 1:n_patch]
+                end
+            else
+                if n_loci == 0
+                    generators[i] = x -> [rand(x, n_ini) for _ in 1:n_patch]
+                else
+                    generators[i] = x -> [[rand(x, n_loci, ploidy) for _ in 1:n_ini] for _ in 1:n_patch]
                 end
             end
-            generators[i] = x -> x
-        elseif length(z_ini[i]) == 1
+        elseif !(z_ini[i] isa AbstractVector) || length(z_ini[i]) == 1
             #-> It is a single individual to copy
             if check_boundaries[i]
                 if any(z_ini[i] .> boundaries[i][2]) || any(z_ini[i] .< boundaries[i][1])
@@ -91,17 +106,6 @@ initialise_population(Normal(0, 1), 5, 2; boundaries= [-1.0, 1.0], n_loci=2)
             n_loci == 0 ?
             generators[i] = x -> [fill(z_ini[i], n_ini) for _ in 1:n_patch] :
             generators[i] = x -> [[fill(z_ini[i], n_loci,ploidy) for _ in 1 : n_ini] for _ in 1:n_patch]
-        elseif length(z_ini[i]) == n_ini
-            #-> It is a one-example group (or the whole population if one patch)
-            if check_boundaries[i]
-                if any(z_ini[i] .> boundaries[i][2]) || any(z_ini[i] .< boundaries[i][1])
-                    error("One of the (possible) initial value provided is out of bound.")
-                end
-            end
-            if n_loci > 0 && length(z_ini[i][1]) != n_loci * ploidy
-                error("The example group does not give a value per locus")
-            end
-            generators[i] = x -> [z_ini[i] for _ in 1:n_patch]
         else
             #-> It is a vector to sample from 
             if check_boundaries[i]
@@ -126,11 +130,50 @@ initialise_population(Normal(0, 1), 5, 2; boundaries= [-1.0, 1.0], n_loci=2)
     end
 
     ## Simplify if single patch.It makes it faster for other function. However, less clean as it is not provide a consistent type for the output and function needs to take this in account.
-    if simplify == true && n_patch == 1
+    if simplify && n_patch == 1
         population = population[1]
     end
     return population
 end
+
+
+
+function get_pop_at_gen(res::DataFrame; gen=:last, patch_col::Symbol=:patch, trait_cols=:auto)
+    # 1) Pick the generation of interest
+    selected_gen = gen === :last ? maximum(res.gen) : gen
+    # 2) Keep only rows for that generation and sort by patch for deterministic output order
+    df_gen = sort(res[res.gen .== selected_gen, :], patch_col)
+    # 3) Determine which columns are traits
+    if trait_cols === :auto
+        trait_cols = filter(c -> startswith(string(c), "z"), names(df_gen))
+    end
+    # Sort traits by numeric suffix so z1,z2,...,z10 are in the right order
+    trait_cols = sort(trait_cols, by = c -> begin
+        m = match(r"\d+$", string(c))
+        m === nothing ? 1 : parse(Int, m.match)
+    end)
+    # 4) Group rows by patch
+    grouped_by_patch = groupby(df_gen, patch_col)
+    # 5) Build population: per patch, collect individuals
+    if length(trait_cols) == 1
+        # Single trait: individuals are scalars
+        zcol = trait_cols[1]
+        return [collect(group_df[!, zcol]) for group_df in grouped_by_patch]
+    else
+        # Multiple traits: individuals are tuples (z1,z2,...)
+        n_traits = length(trait_cols)
+        return [begin
+                    # Pull columns once for cache friendliness
+                    cols = [group_df[!, trait_cols[t]] for t in 1:n_traits]
+                    [ntuple(t -> cols[t][row_i], n_traits) for row_i in 1:nrow(group_df)]
+                end for group_df in grouped_by_patch]
+    end
+end
+
+# Convenience wrapper for the last generation
+get_pop_at_last_gen(res::DataFrame) = get_pop_at_gen(res; gen=:last)
+
+
 
 #-----------------------------------------------
 #*** Prepare fitness function
@@ -625,9 +668,10 @@ end
 
 function print_parameters(parameters;io::IO=stdout)
     parameters = parameters isa NamedTuple ? Dict{Any,Any}(pairs(parameters)) : parameters
+    parameters = merge(get_default_parameters(), parameters)
     printed = Set{Symbol}()
 
-    println(io, "Current default parameters\n" * "="^35)
+    println(io, "Parameters\n" * "="^35)
 
     for (category, keys) in PARAMETER_CATEGORIES
         entries = [(k, parameters[k]) for k in keys if haskey(parameters, k)]
