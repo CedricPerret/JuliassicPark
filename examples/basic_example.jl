@@ -1,6 +1,6 @@
 cd("C:/Users/"*get(ENV, "USERNAME", "")*"/OneDrive/Research/B6-Packages/JuliassicPark")
-
 using Pkg
+
 Pkg.activate(".")
 Pkg.instantiate()
 
@@ -66,17 +66,13 @@ parameters_example = Dict(
 
 
 res = evol_model(parameters_example, gaussian_fitness_function, reproduction_WF)
-@with res plot(:gen, :mean_mean_z, ylims = [0, 1])
-@with res plot(:gen, :mean_mean_distance_to_optimal)
-
-res = evol_model(parameters_example, gaussian_fitness_function, reproduction_WF!)
-@with res plot(:gen, :mean_mean_z, ylims = [0, 1])
-@with res plot(:gen, :mean_mean_distance_to_optimal)
+@with res plot(:gen, :global_mean_z, ylims = [0, 1])
+@with res plot(:gen, :global_mean_distance_to_optimal)
 
 # You can modify parameters directly to run different simulations
 parameters_example[:n_gen] = 300
 res = evol_model(parameters_example, gaussian_fitness_function, reproduction_WF)
-@with res plot(:gen, :mean_mean_z, ylims = [0, 1])
+@with res plot(:gen, :global_mean_z, ylims = [0, 1])
 
 ## Use Named tuple output to avoid specifying the name of other output.
 function gaussian_fitness_function(z::Number; optimal, sigma, args...)
@@ -88,13 +84,12 @@ end
 parameters_example[:other_output_names] = []
 res = evol_model(parameters_example, gaussian_fitness_function, reproduction_WF)
 
-
 #-----------------------------------------------------------
 #*** 3. Conditional Output with `should_it_print`
 #    Only compute secondary output when necessary (e.g. for performance)
 #-----------------------------------------------------------
 
-function gaussian_fitness_function(z; optimal, sigma, should_it_print = true, kwargs...)
+function gaussian_fitness_function(z::Number; optimal, sigma, should_it_print = true, kwargs...)
     fitness = exp(-(z - optimal)^2 / sigma^2)
     @extras begin
         distance_to_optimal = (z - optimal)^2
@@ -184,7 +179,7 @@ a=2,c=1., threshold = 0.65)
 res=evol_model(parameters_example,threshold_public_good_game,reproduction_WF)
 
 #--- Results: Two equilibria. Some simulations converge toward enough cooperators, others to full defection
-@with res plot(:gen,:mean_mean_z,group=:i_simul,ylims=[0,1],legends=false)
+@with res plot(:gen,:global_mean_z,group=:i_simul,ylims=[0,1],legends=false)
 
 #-----------------------------------------------
 #*** Dyadic game
@@ -243,7 +238,7 @@ res = evol_model(parameters_example, fitness_function_dyadic_game, reproduction_
     additional_parameters = additional_parameters)
 
 ## Results: Cooperation collapses in well-mixed population
-@with res plot(:gen, :mean_mean_z, group = :i_simul, ylims = [0, 1], legend = false)
+@with res plot(:gen, :global_mean_z, group = :i_simul, ylims = [0, 1], legend = false)
 
 #--- Simulation: structured population with migration
 parameters_example = (z_ini = 1, mu_m = 0.005, boundaries= [0,1],n_ini=10, de ='g',n_gen=500, 
@@ -254,7 +249,7 @@ res=evol_model(parameters_example,fitness_function_dyadic_game,reproduction_WF_i
 additional_parameters =additional_parameters)
 
 ## Partial cooperation is maintained through spatial structure
-@with res plot(:gen,:mean_mean_z,group=:i_simul,ylims=[0,1],legends=false)
+@with res plot(:gen,:global_mean_z,group=:i_simul,ylims=[0,1],legends=false)
 
 #-----------------------------------------------
 #*** Conflict game
@@ -328,8 +323,8 @@ parameters_example = (
 res = evol_model(parameters_example, cobb_douglas, reproduction_WF)
 
 #--- Results: Traits diverge toward separate optima
-@with res plot(:gen, :mean_mean_z1, group = :i_simul, ylims = [-2.5, 2.5], legend = false)
-@with res plot!(:gen, :mean_mean_z2, group = :i_simul, ylims = [-2.5, 2.5], legend = false)
+@with res plot(:gen, :global_mean_z1, group = :i_simul, ylims = [-2.5, 2.5], legend = false)
+@with res plot!(:gen, :global_mean_z2, group = :i_simul, ylims = [-2.5, 2.5], legend = false)
 
 #-----------------------------------------------
 #*** Carrying capacity drawn from a distribution
@@ -340,9 +335,10 @@ res = evol_model(parameters_example, cobb_douglas, reproduction_WF)
 # - Each group has its own carrying capacity `K` drawn from a Normal distribution
 # - Fitness is constant, but number of offspring is limited by K per group
 
-function ecological_fitness(z::Vector{Vector}; r, K, kwargs...)
-
-    return [fill(r / (1 + length(z[i]) / K[i]), length(z[i])) for i in 1:length(z)]
+function ecological_fitness(z::Vector{<:Vector}; r, K, kwargs...)
+    fitness = [fill(r / (1 + length(z[i]) / K[i]), length(z[i])) for i in 1:length(z)]
+    group_size = length.(z)
+    return (;fitness, group_size)
 end
 
 function draw_K(; mean_K, sd_K, n_patch, kwargs...)
@@ -366,7 +362,7 @@ res = evol_model(parameters_example, ecological_fitness, reproduction_explicit_p
 additional_parameters = Dict(:K => draw_K))
 
 #--- Results: Groups grow to different sizes based on drawn K values
-@with res plot(:gen, :n, group = :patch, legend = false)
+@with res plot(:gen, :group_size, group = :patch, legend = false)
 
 #-----------------------------------------------
 #*** Disruptive selection and polymorphism (sexual reproduction)
@@ -402,7 +398,7 @@ res = evol_model(parameters_example, disruptive_fitness, reproduction_WF)
 @with res scatter(:gen, :z, legend = false)
 
 
-#--- Results: Sexual reproduction reintroduce it (third branch in the center.)
+#--- Results: Sexual reproduction introduces intermediary phenotypes (third branch in the center.)
 parameters_example[:n_loci] = 1
 res_sexual = evol_model(parameters_example, disruptive_fitness, reproduction_WF_sexual)
 @with res_sexual scatter(:gen, :z,  legend = false)
@@ -455,39 +451,8 @@ end
 
 #@ Performance comparison. 
 @btime res = evol_model(parameters_example, gaussian_fitness_function, reproduction_WF);
-@with res plot(:gen, :mean_mean_z, ylims = [0, 1])
+@with res plot(:gen, :global_mean_z, ylims = [0, 1])
 @btime res = evol_model(parameters_example, gaussian_fitness_function_pop, reproduction_WF);
-@with res plot(:gen, :mean_mean_z, ylims = [0, 1])
+@with res plot(:gen, :global_mean_z, ylims = [0, 1])
 @btime res = evol_model(parameters_example, gaussian_fitness_function!, reproduction_WF);
-@with res plot(:gen, :mean_mean_z, ylims = [0, 1])
-
-
-
-##In case you don't have any extras
-function gaussian_fitness_function!(z::Vector{Float64}, fitness; optimal, sigma, args...)
-    for i in 1:length(z)
-        fitness[i] = exp(-(z[i] - optimal)^2 / sigma^2)
-    end
-    distance_to_optimal = (z .- optimal).^2
-    return nothing
-end
-
-res = evol_model(parameters_example, gaussian_fitness_function!, reproduction_WF)
-
-## Maximum compact.
-function gaussian_fitness_function!(z::Vector{Float64}, fitness; optimal, sigma, should_it_print = true,kwargs...)
-    for i in 1:length(z)
-        fitness[i] = exp(-(z[i] - optimal)^2 / sigma^2)
-    end
-    @extras begin
-        distance_to_optimal = (z .- optimal).^2
-    end
-    return distance_to_optimal
-end
-
-parameters_example[:j_print] = 100
-res = evol_model(parameters_example, gaussian_fitness_function!, reproduction_WF!)
-
-@btime res = evol_model(parameters_example, gaussian_fitness_function, reproduction_WF);
-@btime res = evol_model(parameters_example, gaussian_fitness_function!, reproduction_WF!)
-
+@with res plot(:gen, :global_mean_z, ylims = [0, 1])

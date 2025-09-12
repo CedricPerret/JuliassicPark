@@ -1,6 +1,4 @@
-#cd("C:/Users/cperret7/OneDrive/Research/B6-Packages/JuliassicPark")
-cd("C:/Users/Cedric/OneDrive/Research/B6-Packages/JuliassicPark")
-
+#Run using Pkg.test("JuliassicPark")
 using JuliassicPark
 using Test
 
@@ -66,9 +64,11 @@ function run_smoke_tests(parameters, fitness_function;
                 try
                     evol_model(params, fitness_function, m.f)
                     println(io, "[OK]    ", lpad(string(m.name), 45), "  de=", de, "  structure=", structure)
+                    flush(io)
                 catch err
                     msg = sprint(showerror, err)
                     println(io, "[ERROR] ", lpad(string(m.name), 45), "  de=", de, "  structure=", structure, "  : ", msg)
+                    flush(io)
                 end
             end
         end
@@ -99,7 +99,7 @@ parameters_example = Dict(
     :sigma => 1.0,
     :j_print => 100
 )
-res = evol_model(parameters_example, gaussian_fitness_function, reproduction_WF)
+#res = evol_model(parameters_example, gaussian_fitness_function, reproduction_WF)
 run_smoke_tests(parameters_example, gaussian_fitness_function)
 
 #*** Two traits float
@@ -156,7 +156,7 @@ parameters_example = Dict(
 )
 
 ## Debugging
-#res = evol_model(parameters_example, test_fitness_function, reproduction_WF)
+res = evol_model(parameters_example, test_fitness_function, reproduction_explicit_poisson)
 run_smoke_tests(parameters_example, test_fitness_function)
 
 

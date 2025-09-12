@@ -657,7 +657,8 @@ function _base_default_parameters()
         :split_sweep => false,
         :distributed => false,
         :n_simul => 1,
-        :simplify => true
+        :simplify => true,
+        :boundaries => nothing
     )
 end
 
@@ -802,8 +803,7 @@ function compute_derived_parameters!(parameters, additional_parameters; addition
     for (key, value) in additional_parameters
         @assert !haskey(parameters, key) "Cannot add constant parameter `:$key`: a parameter with this name already exists in the parameter dictionary."
         value_parameters = value(; parameters...)
-        ## In case a single value is obtained.
-        value_parameters = value_parameters isa AbstractVector ? value_parameters : [value_parameters]
+        #value_parameters = value_parameters isa AbstractVector ? value_parameters : [value_parameters]
         parameters[key] = value_parameters
         #--- Saving new parameters
         ##The new parameters are too long to print in the name of the output file but...
