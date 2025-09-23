@@ -4,15 +4,13 @@
 
 It is built for researchers and modelers who need both flexibility and convenience. JuliassicPark lets you define complex model logic and rich fitness functions, while handling the rest automatically: simulation loops, parameter management, data output, and parallel execution. 
 
-One of its key advantages is that it’s easy to learn and quick to use, you don’t need to learn a large API.
-
 The goal is simple: spend less time on boilerplate, and more time exploring ideas.
 
 ---
 
 ## 🔧 Features
 
-- Evolutionary models with support for continuous, discrete, boolean traits; single or multiple traits; with phenotype or explicit genotype.
+- Evolutionary models with support for continuous and discrete traits; single or multiple traits; with phenotype or explicit genotype.
 - Multiple reproduction schemes: Wright–Fisher, Moran, explicit (agent-based), sexual reproduction.
 - Flexible architecture compatible with a wide range of custom fitness functions
 - Automatic result logging and data output for simulation analysis
@@ -63,13 +61,14 @@ parameters_example = (
 res = evol_model(parameters_example, gaussian_fitness_function, reproduction_WF)
 ```
 
-The **fitness function** is the only function you must write as code ! Reproduction methods like `reproduction_WF` are already provided and most parameters have defaults.
+The **fitness function** is the only function you must write as code! Reproduction methods like `reproduction_WF` are already provided and most parameters have defaults.
 
 ---
 
 ## Core concepts
 
 ---
+
 
 ### 🎯 Fitness Function
 
@@ -82,9 +81,10 @@ function my_fitness_function(trait; param1, param2, kwargs...)
 end
 ```
 
-- It **must take as its first argument the trait representing the evolving entity.** This can be a single individual’s trait, a collection of individuals (e.g., a group or deme), or an entire metapopulation.  
+- It **must take as its first argument the trait representing the evolving entity.** This can be a single individual’s trait, a group represented as a vector, or an entire metapopulation represented as a vector of vector.  
 - It **must take any additional parameters as keyword arguments** (after `;`).  
 - It **must return fitness as the first output**. The fitness must match the structure of the input trait (individual, group, or metapopulation).  
+
 
 #### Different levels
 
@@ -97,7 +97,7 @@ The code supports fitness functions defined at different levels:
 Choose the level that matches your model. If fitness depends only on the individual, you can define the function for a single trait. If it depends on within-group interactions, you need to define it at the population level. If it depends on interactions between groups, you need to define it at the metapopulation level.
 
 
-To avoid ambiguity, it is recommended to **specify the expected input type explicitly** (for example `Number`, `Tuple`, `Vector`, or `Vector{Vector}`). If you do not, the system will try to guess the level by trial and error. In that case, if there is a mistake inside the fitness function, the error may show up in confusing places rather than pointing to the real cause. Being explicit makes your function **safer** (errors are caught in the right place) and often **faster** (Julia can optimize code more effectively when types are clear).
+To avoid ambiguity, it is recommended to **specify the expected input type explicitly** (for example `Number`, `Tuple`, `Vector`, or `Vector{<:Vector}`). If you do not, the system will try to guess the level by trial and error. In that case, if there is a mistake inside the fitness function, the error may show up in confusing places rather than pointing to the real cause. Being explicit makes your function **safer** (errors are caught in the right place) and often **faster** (Julia can optimize code more effectively when types are clear).
 
 
 #### Optional extra outputs
@@ -186,7 +186,7 @@ Some of the most commonly used are:
 - `reproduction_explicit_poisson` — explicit offspring number, drawn from a Poisson distribution.  
 - `reproduction_WF_sexual` — Wright–Fisher reproduction with sexual recombination (diploid, multilocus).  
 
-Note that we use the term *reproduction* in a broad sense. It can also represent processes such as learning or cultural transmission. For instance ``reproduction_Moran_pairwise_learning!`` is the function classicaly usd in model with pairwise learning e.g. Traulsen et al, (2006).
+Note that we use the term *reproduction* in a broad sense. It can also represent processes such as learning or cultural transmission. For instance ``reproduction_Moran_pairwise_learning!`` is the function classicaly used in models with pairwise learning e.g. Traulsen et al, (2006).
 
 ---
 
@@ -228,7 +228,7 @@ Column names for extra variables are determined in the following priority order:
 
 The engine adapts variables to match the chosen resolution:  
 
-- If the desired resolution (`:de`) is **higher** than the variable (e.g. `:de = 'p'` and the variable is individual-level), values are **averaged**. and names are changed accordingly.
+- If the desired resolution (`:de`) is **higher** than the variable (e.g. `:de = 'p'` and the variable is individual-level), values are **averaged** and names are changed accordingly.
   Example:  
   - Individual trait `z` → `mean_z = mean(population)`  
   - Across the whole metapopulation → `global_mean_z = mean(vcat(metapopulation...))`  
@@ -250,7 +250,7 @@ And for generation-level resolution (`:de = 'g'`):
 | 1   | 42      | 0.42          | 0.223               | 0.047                           |
 | 2   | 42      | 0.40          | 0.205               | 0.047                           |
 
-Here, `global_mean_z` is the average of **all individuals in the population**.  It is not a “mean of means”.
+Here, `global_mean_z` is the average of **all individuals in the population**.
 
 #### Writing on disk
 
@@ -355,7 +355,6 @@ You can see the full list of migration function with their requirements using:
 list_migration_methods()
 ```
 You can access directly the list of function using `list_reproduction_functions()`.
-
 
 ---
 ## 🔧Advanced usage
@@ -482,11 +481,8 @@ addprocs(4)  # or what your machine or cluster provides
 
 ## Performance tips
 
-### Reproduction function
+---
 
-The code runs **much faster** when 
-    - you use reproduction function where group size is constant, since output arrays can be preallocated.
-    - You use in-place reproduction functions (those ending with `!`).  
 
 ### Fitness functions
 
@@ -494,7 +490,7 @@ The code runs **much faster** when
 
 When possible, it is usually faster to define the function at the **metapopulation level**, because the simulation can run without extra broadcasting or reshaping.
 
-### In-place fitness functions
+#### In-place fitness functions
 
 Memory use is lower (and runtime is often faster) when a function writes results into an existing array instead of creating a new one.
 In JuliassicPark.jl you can provide an in-place fitness function at the population or metapopulation level. Such a function:  
@@ -525,7 +521,13 @@ Fitness is evaluated many times per generation and across many generations, so e
 - Reuse preallocated buffers when possible, rather than creating new arrays inside hot loops.
 - When slicing arrays, consider @views to avoid copying data.
 
-### 🧠 Conditional computation for extras
+### Reproduction function
+
+The code runs **much faster** when 
+    - you use reproduction function where group size is constant, since output arrays can be preallocated.
+    - You use in-place reproduction functions (those ending with `!`).  
+
+### Conditional computation for extras
 
 If you only save output occasionally (e.g. every 100 generations with `j_print = 100`, see [Parameters](#Parameters)), you can skip computing extra variables at every step. To avoid unnecessary computation:
 1. Include `should_it_print = true` as a keyword argument in the fitness function.
@@ -545,12 +547,39 @@ end
 **Warning:** 
 Avoid reusing variable names inside `@extras`. If a variable is already defined before the block, it will be overwritten with `[]` when skipping computation.
 
+---
+## Design choices
+---
+
+### Representation of traits and population
+
+A group is represented as a vector of trait values, and a population as a vector of such groups. The length of the outer vector is the number of patches, and the length of each inner vector is the group size. If there is only one patch, the population can be a single vector of traits.
+
+_Why?_ The alternative would be a matrix representation, which can be faster for fixed group sizes but fails when groups differ in size. Vectors of vectors are more flexible, and Julia’s methods work efficiently with this representation.
+
+Multiple traits for an individual are stored as a tuple.
+
+_Why?_ Tuples are immutable, lightweight, and clearly distinguish “one individual with multiple traits” from “a group of individuals.”
+
+Genotypes are represented as matrices, with rows corresponding to loci and columns to alleles (diploid by default).
+
+_Why?_ This makes genotypes easy to recognize, and phenotypes can be derived quickly from them using mapping functions.
+
+### All as parameters, not agent-based
+
+A common approach is to code each individual as an agent with attributes (traits) and methods (e.g. mutate). This works well in some contexts, but evolutionary models often do not require a full agent-based framework. Most processes reduce naturally to operations on vectors of traits, which are faster and easier to read.
+
+For the same reason, the package does not use an object-oriented style. Julia is not designed for that paradigm, and keeping everything as simple data structures with parameter dictionaries makes the code transparent, lightweight, and closer to the mathematical models used in evolutionary theory.
+
+---
 
 ## 🧪 Full function signature
 
+---
+
 ```julia
 evol_model(parameters, fitness_function, reproduction_method; 
-sweep=Dict{Symbol, Vector}(), additional_parameters= Dict{Symbol, Function}(), migration_function = nothing genotype_to_phenotype_mapping = identity)
+sweep=Dict{Symbol, Vector}(), additional_parameters= Dict{Symbol, Function}(), migration_function = nothing, genotype_to_phenotype_mapping = identity)
 ```
 
 ### 🧾 Arguments
