@@ -90,9 +90,13 @@ macro extras(block)
     assignments = [stmt for stmt in stmts if stmt isa Expr && stmt.head == :(=)]
     # Extract the left-hand side variable names from assignmentss
     vars = [stmt.args[1] for stmt in assignments]
-    # Generate code to define each variable as `nothing`    
+    # Generate code to define each variable as `NaN` 
+    # Using NaN here is not ideal, since NaN is normally reserved for invalid numerical results and it propagates through arithmetic. 
+    #However, it avoids compatibility issues (such as Float64 values being promoted to Any and causing errors in the output). 
+    # + this is acceptable, because these values are never used in further computations — they only serve as placeholders so that the user can always return a single, consistent tuple.
+    init = [:( $(esc(var)) = NaN ) for var in vars]   
     #init = [:( $(esc(var)) = nothing ) for var in vars]
-    init = [:( $(esc(var)) = [] ) for var in vars]
+    #init = [:( $(esc(var)) = [] ) for var in vars]
     # Return full quoted expression: define all vars, then conditionally assign
     return quote
         $(init...)   # Always define all variables as `nothing`

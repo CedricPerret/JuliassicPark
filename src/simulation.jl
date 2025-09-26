@@ -158,8 +158,6 @@ function get_template_model(parameters_input, fitness_function, repro_function; 
         end
         calculate_phenotype = genotype_to_phenotype_mapping === identity ? identity : (pop -> lift_map(genotype_to_phenotype_mapping, pop))
 
-
-
         #--- Initialise type of reproduction
         reproduction_mode = :pure
         new_population = deepcopy(population)
@@ -213,8 +211,6 @@ function get_template_model(parameters_input, fitness_function, repro_function; 
             output_cst_names=cst_output_name, output_cst=cst_output
         )
 
-
-        
         ## To avoid passing unnecessary or unused parameters (which could cause errors or reduce clarity), we explicitly filter only the relevant keyword arguments from the main `parameters` dictionary.
         repro_kwargs_names = [:n_replacement,:transition_proba, :n_pop_by_class, :n_patch, :mig_rate,:group_fitness_fun,:n_loci]
         repro_kwargs = _filter_kwargs(parameters,repro_kwargs_names)

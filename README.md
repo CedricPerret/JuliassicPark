@@ -545,7 +545,7 @@ end
 ```
 
 **Warning:** 
-Avoid reusing variable names inside `@extras`. If a variable is already defined before the block, it will be overwritten with `[]` when skipping computation.
+If a variable is already defined before the block, it will be overwritten with `NaN` when skipping computation. Avoid reusing variable already defined inside `@extras`.
 
 ---
 ## Design choices
