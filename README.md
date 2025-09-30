@@ -65,6 +65,17 @@ The **fitness function** is the only function you must write as code! Reproducti
 
 ---
 
+## 📚 Examples
+
+Examples are provided in the `basic_examples/` folder of the repository. They show how to set up different evolutionary scenarios, explore model options, and analyse or plot results. We recommend reading them together with this README, as they illustrate in practice the different features and possibilities described here.
+
+Note that:
+- The example file is plain `.jl` script but it is meant to be run step by step like a notebook (as you might do in R). This can easily be done in VS Code: open the file and run the current line or selection with Shift+Enter.
+- These examples use additional packages such as `Plots.jl` and `DataFramesMeta.jl`. They are **not required** for running JuliassicPark itself, but you may need to install them separately if you want to reproduce the example figures:
+
+
+---
+
 ## Core concepts
 
 ---

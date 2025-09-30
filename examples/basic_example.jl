@@ -1,21 +1,29 @@
-cd("C:/Users/"*get(ENV, "USERNAME", "")*"/OneDrive/Research/B6-Packages/JuliassicPark")
-using Pkg
-
-Pkg.activate(".")
-Pkg.instantiate()
-
-
 #**********************************************************
 #***             JuliassicPark.jl Example Usage
 #**********************************************************
 
-using Revise
+## Load JuliassicPark
+# If you started Julia from another folder, run `cd("path/to/JuliassicPark")` first.
+# If you launch Julia inside the JuliassicPark folder, `Pkg.activate(".")` is enough.
+
+using Pkg
+Pkg.activate(".")
+Pkg.instantiate()
 using JuliassicPark
-using Distributions
-using DataFramesMeta
+
+## Optional packages for examples:
+# - Plots.jl and DataFramesMeta.jl: to visualise results
+# - Distributions.jl: to initialise traits from probability distributions
+# - BenchmarkTools.jl: to test performance
+
 using Plots
+using DataFramesMeta
+using Distributions
 using BenchmarkTools
 
+# If you don’t have them already, install with:
+# using Pkg
+# Pkg.add(["Plots", "DataFramesMeta", "Distributions", "BenchmarkTools"])
 
 #-----------------------------------------------------------
 #*** 1. Minimal Example — Random Fitness
@@ -34,7 +42,6 @@ parameters_example = (
 )
 
 res = evol_model(parameters_example, dummy_fitness_function, reproduction_WF)
-
 
 #-----------------------------------------------------------
 #*** 2. Gaussian Fitness Function
