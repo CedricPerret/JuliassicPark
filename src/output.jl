@@ -106,6 +106,8 @@ macro extras(block)
     end
 end
 
+
+
 """
     _infer_variable_resolution(output::Vector; n_patch::Int = 1)
 

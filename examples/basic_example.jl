@@ -92,7 +92,7 @@ parameters_example[:other_output_names] = []
 res = evol_model(parameters_example, gaussian_fitness_function, reproduction_WF)
 
 #-----------------------------------------------------------
-#*** 3. Conditional Output with `should_it_print`
+#*** 2.1 Conditional Output with `should_it_print`
 #    Only compute secondary output when necessary (e.g. for performance)
 #-----------------------------------------------------------
 
@@ -114,7 +114,7 @@ parameters_example[:j_print] = 100
 @time evol_model(parameters_example, gaussian_fitness_function, reproduction_WF)
 
 #-----------------------------------------------------------
-#*** 4. Output Configurations
+#*** 2.2 Output Configurations
 #-----------------------------------------------------------
 
 #--- (a) No output file
@@ -139,7 +139,7 @@ parameters_example[:n_simul] = 2
 res = evol_model(parameters_example, gaussian_fitness_function, reproduction_WF)
 
 #-----------------------------------------------------------
-#*** 5. Parameter Sweep
+#*** 2.3 Parameter Sweep
 #-----------------------------------------------------------
 
 parameter_sweep = Dict(:sigma => [1.0, 2.0], :mu_m => [0.05, 0.1])
@@ -164,7 +164,7 @@ evol_model(parameters_example, gaussian_fitness_function, reproduction_WF; sweep
 
 
 #-----------------------------------------------
-#*** Threshold public good game
+#*** 3. Threshold public good game
 # Demonstrates (i) boolean trait, (ii) fitness function applying to group
 #-----------------------------------------------
 
@@ -189,7 +189,7 @@ res=evol_model(parameters_example,threshold_public_good_game,reproduction_WF)
 @with res plot(:gen,:global_mean_z,group=:i_simul,ylims=[0,1],legends=false)
 
 #-----------------------------------------------
-#*** Dyadic game
+#*** 4. Dyadic game
 # Demonstrates (i) structured population, (ii) integer trait, (iii) additional parameters
 #-----------------------------------------------
 
@@ -234,7 +234,7 @@ parameters_example = (
     boundaries = [0, 1],
     n_ini = 1000,
     de = 'g',
-    n_gen = 500,
+    n_gen = 2000,
     R = 4.75,
     S = 0,
     T = 5,
@@ -248,7 +248,7 @@ res = evol_model(parameters_example, fitness_function_dyadic_game, reproduction_
 @with res plot(:gen, :global_mean_z, group = :i_simul, ylims = [0, 1], legend = false)
 
 #-> Partial cooperation is maintained through spatial structure
-parameters_example = (z_ini = 1, mu_m = 0.005, boundaries= [0,1],n_ini=10, de ='g',n_gen=500, 
+parameters_example = (z_ini = 1, mu_m = 0.005, boundaries= [0,1],n_ini=10, de ='g',n_gen=2000, 
 n_patch = 500, mig_rate= 0.05,
 R = 4.75, S = 0, T = 5, P = 0)
 
@@ -258,7 +258,7 @@ additional_parameters =additional_parameters)
 @with res plot(:gen,:global_mean_z,group=:i_simul,ylims=[0,1],legends=false)
 
 #-----------------------------------------------
-#*** Conflict game
+#*** 5. Conflict game
 # Demonstrates (i) fitness function taking metapopulation as input
 #-----------------------------------------------
 
@@ -299,7 +299,7 @@ res = evol_model(parameters_example, conflict_game, reproduction_WF)
 
 
 #-----------------------------------------------
-#*** Two traits (Cobb–Douglas fitness landscape)
+#*** 6. Two traits (Cobb–Douglas fitness landscape)
 # Demonstrates (i) multiple traits
 #-----------------------------------------------
 
@@ -333,8 +333,8 @@ res = evol_model(parameters_example, cobb_douglas, reproduction_WF)
 @with res plot!(:gen, :global_mean_z2, group = :i_simul, ylims = [-2.5, 2.5], legend = false)
 
 #-----------------------------------------------
-#*** Carrying capacity drawn from a distribution
-# Demonstrates (i) additional parameters, (ii) group-level growth
+#*** 7. Ecological model of growth
+# Demonstrates (i) additional parameters computed at the beginning of the simulation, (ii) varying population size
 #-----------------------------------------------
 
 #--- Model description
@@ -371,8 +371,8 @@ additional_parameters = Dict(:K => draw_K))
 @with res plot(:gen, :group_size, group = :patch, legend = false)
 
 #-----------------------------------------------
-#*** Disruptive selection and polymorphism (sexual reproduction)
-# Demonstrates (i) diploid traits,
+#*** 8. Disruptive selection and polymorphism (sexual reproduction)
+# Demonstrates (i) diploid traits
 #-----------------------------------------------
 
 #--- Model description
@@ -405,13 +405,13 @@ res = evol_model(parameters_example, disruptive_fitness, reproduction_WF)
 
 
 #-> Sexual reproduction introduces intermediary phenotypes (third branch in the center.)
-parameters_example[:n_loci] = 1
+parameters_example[:n_loci] = 1;
 res_sexual = evol_model(parameters_example, disruptive_fitness, reproduction_WF_sexual)
 @with res_sexual scatter(:gen, :z,  legend = false)
 
 
 #-----------------------------------------------
-#*** Performance tips: in-place fitness function
+#*** 9. Performance tips: in-place fitness function
 # Demonstrates how to use in-place fitness function
 #-----------------------------------------------
 
@@ -461,6 +461,6 @@ end
 #-> faster
 @btime res = evol_model(parameters_example, gaussian_fitness_function_pop, reproduction_WF);
 @with res plot(:gen, :global_mean_z, ylims = [0, 1])
-#-> fastest
+#-> less allocation
 @btime res = evol_model(parameters_example, gaussian_fitness_function!, reproduction_WF);
 @with res plot(:gen, :global_mean_z, ylims = [0, 1])

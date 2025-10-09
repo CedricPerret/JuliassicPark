@@ -162,6 +162,18 @@ function invert_3D(piv::AbstractVector{<:AbstractVector{<:Union{AbstractVector,T
       for v in 1:V ]
 end
 
+## If the input is 2D (patch × individual), we assume there is implicitly a single variable.
+## To keep a consistent output format, we wrap it in a one-element tuple,
+## so the result still has the same "vector of variable slices" structure as the 3D case.
+function invert_3D(piv::AbstractVector{<:AbstractVector})
+    (piv,)
+end
+
+
+
+
+unwrap(x::AbstractArray) = length(x) == 1 ? first(x) : x
+
 
 # function invert_3D(piv::AbstractVector{<:AbstractVector{<:Union{AbstractVector,Tuple}}})
 #     P = length(piv)                         # patches

@@ -114,8 +114,9 @@ function get_template_model(parameters_input, fitness_function, repro_function; 
     model = function(parameters_input, i_simul)
         #*** Initialisation
         Random.seed!(i_simul)
-
         parameters = deepcopy(parameters_input)
+        #--- Initialise second parameters which need to be derived from the given parameters (which can be directly printed)
+        parameters,cst_output_name,cst_output = compute_derived_parameters!(parameters,additional_parameters;additional_parameters_to_omit=parameters[:additional_parameters_to_omit])
 
         n_traits = 1
         if parameters[:z_ini] isa AbstractDataFrame
@@ -169,8 +170,7 @@ function get_template_model(parameters_input, fitness_function, repro_function; 
             end
         end
         in_place_fitness_function = contains(give_me_my_name(fitness_function), "!") ? true : false
-        #--- Initialise second parameters which need to be derived from the given parameters (which can be directly printed)
-        parameters,cst_output_name,cst_output = compute_derived_parameters!(parameters,additional_parameters;additional_parameters_to_omit=parameters[:additional_parameters_to_omit])
+
         #--- Preprocess fitness function
         population_phenotype = calculate_phenotype(population)
         ## Standardise the output of the fitness function. See preprocess_fitness_function for details.

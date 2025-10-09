@@ -372,11 +372,7 @@ You can access directly the list of function using `list_reproduction_functions(
 ---
 ### Parameters Computed at Runtime
 
-You can define additional parameters that are computed **once at the start of the simulation**, rather than fixed in advance. This is useful when you want to:
-
-- Draw constants (e.g. carrying capacities) from a distribution
-- Precompute structures (e.g. networks, fitness landscapes)
-- Store values that depend on other parameters but should remain constant during the run.
+You can define additional parameters that are computed **once at the start of the simulation**, rather than fixed in advance. This is useful when you want to precompute values that depend on other parameters, for example, drawing constant carrying capacities from a distribution, generating a network based on a chosen network type, or ensuring that initial trait values are always far from the current optimum, whatever that optimum is.
 
 To do this, pass a dictionnary to `evol_model` using the keyword `:additional_parameters`:
 
@@ -384,6 +380,8 @@ To do this, pass a dictionnary to `evol_model` using the keyword `:additional_pa
 - **Values** are functions that compute the parameter from existing ones, potentially based on values of other `parameters`
 
 Each function **must accept only keyword arguments**, and all required arguments must be present in the `parameters` dictionary. . It should also include `kwargs...` at the end for compatibility.
+
+If a derived parameter has the same name as an existing one, the old value is replaced by the new one.
 
 Example:
 
