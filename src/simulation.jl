@@ -49,9 +49,7 @@ Main entry point to run an evolutionary simulation or parameter sweep with user-
 ## Wrapper (prepare parameters and put default, then call each part)
 ## here prepare only thing that will not be varied in a sweep.
 function evol_model(parameters_input, fitness_function, repro_function; sweep=Dict{Symbol, Vector}(), additional_parameters= Dict{Symbol, Function}(), migration_function = nothing, genotype_to_phenotype_mapping = identity)
-    @assert haskey(parameters_input, :z_ini) "Missing required parameter: `:z_ini`. Please provide the initial values or generators for the trait(s)."
     
-
     ## To not modify the parameters given
     if isempty(parameters_input)
         parameters = parse_commandline()
@@ -60,6 +58,8 @@ function evol_model(parameters_input, fitness_function, repro_function; sweep=Di
     end
     parameters = parameters isa NamedTuple ? Dict{Any,Any}(pairs(parameters)) : parameters
     parameters = merge(get_default_parameters(), parameters)
+
+    @assert haskey(parameters, :z_ini) "Missing required parameter: `:z_ini`. Please provide the initial values or generators for the trait(s)."
 
     ## We infer if the group sizes will change based on the reproduction function.
     if  contains(give_me_my_name(repro_function), "explicit") 

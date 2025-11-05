@@ -800,32 +800,6 @@ end
 end
 
 #*** Programmatic registry of reproduction functions
-# Single source of truth for reproduction methods
-# applies_to ∈ (:pop, :metapop, :both)
-_REPRO_FUNS = [
-    (name = :reproduction_Moran_DB!,                f = reproduction_Moran_DB!,                desc = "Death–birth Moran (in-place)",                       needs = Symbol[],                    applies_to = :pop),        # single population only
-    (name = :reproduction_Moran_BD!,                f = reproduction_Moran_BD!,                desc = "Birth–death Moran (in-place)",                        needs = Symbol[],                    applies_to = :pop),        # single population only
-    (name = :reproduction_Moran_pairwise_learning!, f = reproduction_Moran_pairwise_learning!, desc = "Pairwise comparison imitation (in-place)",            needs = Symbol[],                    applies_to = :pop),        # single population only
-
-    (name = :reproduction_WF,                       f = reproduction_WF,                       desc = "Wright–Fisher reproduction",                          needs = Symbol[],                    applies_to = :both),       # has Vector and Vector{Vector} methods
-    (name = :reproduction_WF!,                      f = reproduction_WF!,                      desc = "Wright–Fisher reproduction (in-place)",               needs = Symbol[],                    applies_to = :both),       # has Vector and Vector{Vector} methods
-
-    (name = :reproduction_WF_island_model_hard_selection,  f = reproduction_WF_island_model_hard_selection,  desc = "Island model, hard selection, global competition", needs = [:mig_rate],              applies_to = :metapop),    # metapop only
-    (name = :reproduction_WF_island_model_hard_selection!, f = reproduction_WF_island_model_hard_selection!, desc = "Island model, hard selection, global competition (in-place)", needs = [:mig_rate], applies_to = :metapop),    # metapop only
-    (name = :reproduction_WF_island_model_soft_selection,  f = reproduction_WF_island_model_soft_selection,  desc = "Island model, soft selection, local competition",  needs = [:mig_rate],              applies_to = :metapop),    # metapop only
-    (name = :reproduction_WF_island_model_soft_selection!, f = reproduction_WF_island_model_soft_selection!, desc = "Island model, soft selection, local competition (in-place)",  needs = [:mig_rate], applies_to = :metapop),    # metapop only
-
-    (name = :reproduction_explicit_poisson,         f = reproduction_explicit_poisson,         desc = "Explicit number of offspring (Poisson)",              needs = Symbol[],                    applies_to = :both),       # vector and wrapper for metapop
-
-    (name = :reproduction_WF_sexual,                f = reproduction_WF_sexual,                desc = "Wright–Fisher, sexual recombination",                 needs = [:n_loci],                   applies_to = :both),       # single and metapop overloads
-    (name = :reproduction_WF_sexual!,                f = reproduction_WF_sexual!,                desc = "Wright–Fisher, sexual recombination (in-place)",                 needs = [:n_loci],                   applies_to = :both),       # single and metapop overloads
-
-    # Requires extra positional args not wired by evol_model. Keep listed for completeness.
-    (name = :reproduction_WF_copy_group_trait!,      f = reproduction_WF_copy_group_trait!,      desc = "Copy group-level trait using group fitness",          needs = [:group_level_trait, :group_fitness_fun], applies_to = :metapop),
-]
-
-list_reproduction_functions() = _REPRO_FUNS
-
 # Pretty-printer driven by the registry
 #*** Programmatic registry of reproduction functions
 # Single source of truth for reproduction methods

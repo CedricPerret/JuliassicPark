@@ -8,7 +8,7 @@ The goal is simple: spend less time on boilerplate, and more time exploring idea
 
 ---
 
-## 🔧 Features
+## Features
 
 - Evolutionary models with support for continuous and discrete traits; single or multiple traits; with phenotype or explicit genotype.
 - Multiple reproduction schemes: Wright–Fisher, Moran, explicit (agent-based), sexual reproduction.
@@ -17,7 +17,7 @@ The goal is simple: spend less time on boilerplate, and more time exploring idea
 
 ---
 
-## 📦 Installation
+## Installation
 
 This package is not yet registered. You can install it from GitHub:
 
@@ -28,7 +28,7 @@ Pkg.add(url="https://github.com/CedricPerret/JuliassicPark.git")
 
 ---
 
-## 🚀 Quick start
+## Quick start
 The main entry point is `evol_model`, which runs a complete evolutionary simulation. The minimum required is to:
 
 1. Write a **fitness function** that maps trait values to fitness.
@@ -65,7 +65,7 @@ The **fitness function** is the only function you must write as code! Reproducti
 
 ---
 
-## 📚 Examples
+## Examples
 
 Examples are provided in the `basic_examples/` folder of the repository. They show how to set up different evolutionary scenarios, explore model options, and analyse or plot results. We recommend reading them together with this README, as they illustrate in practice the different features and possibilities described here.
 
@@ -81,7 +81,7 @@ Note that:
 ---
 
 
-### 🎯 Fitness Function
+### Fitness Function
 
 Your custom fitness function is the only part you must code yourself. It should follow this structure:
 
@@ -128,7 +128,7 @@ If you use a named tuple, field names are used as column names in the output. Ot
 
 ---
 
-### ⚙️ Parameters
+### Parameters
 
 All simulation settings are stored in a single `parameters` argument, which can be a `Dict` or a `NamedTuple`.  
 Within this container, parameters can play different roles:
@@ -142,7 +142,7 @@ These are not separate categories in the code: all of them are just fields in th
 You must always provide trait parameters and any fitness parameters required by your model.
 Simulation parameters already exist by default. Their names and purposes are listed in the complete [list of parameters](#list-of-parameters). To override a simulation parameter, simply assign it a new value in `parameters`.
 
-### 🧬 Traits
+### Traits
 
 Traits represent the heritable characteristics that evolve in your model. Traits can be of different types, depending on how you want to represent strategies or phenotypes:
 
@@ -201,7 +201,7 @@ Note that we use the term *reproduction* in a broad sense. It can also represent
 
 ---
 
-### 📤 Output
+### Output
 
 `evol_model` returns a `DataFrame`. Each row corresponds to a generation (`:de = 'g'`), a patch (`:de = 'p'`), or an individual (`:de = 'i'`), depending on the value of the `:de` parameter.  
 Results are saved starting from generation `:n_print`, and then every `:j_print` generations.
@@ -368,7 +368,7 @@ list_migration_methods()
 You can access directly the list of function using `list_reproduction_functions()`.
 
 ---
-## 🔧Advanced usage
+## Advanced usage
 ---
 ### Parameters Computed at Runtime
 
@@ -444,7 +444,7 @@ By default, all results are returned in a single DataFrame. If `:split_sweep = t
 
 ---
 
-### 🧵 Parallelisation and output splitting
+### Parallelisation and output splitting
 
 JuliassicPark.jl lets you run many simulations side by side. In practice, there are two things to decide:
 1) how to split the output files,
@@ -582,7 +582,7 @@ For the same reason, the package does not use an object-oriented style. Julia is
 
 ---
 
-## 🧪 Full function signature
+## Full function signature
 
 ---
 
@@ -653,12 +653,12 @@ reset_default_parameters!()        # Reset to built-in defaults
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 - `src/` — core simulation logic split into mutation, reproduction, migration, simulation engine
 - `test/` — unit tests
 - `basic_examples/` — demo models
 
-## 📄 License
+## License
 
 MIT License. See `LICENSE` file for details.

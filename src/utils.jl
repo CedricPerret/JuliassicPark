@@ -302,19 +302,20 @@ end
 Add a small constant (`eps()`) to all entries of a vector, in place.
 Useful to avoid zeros when they would cause numerical issues (e.g. in sampling or logarithms).
 """
-function add_eps!(vec::Vector{Float64})
+function add_eps!(vec::Vector{Float64}; minval = eps())
         @inbounds for i in eachindex(vec)
-        vec[i] += eps()
+        vec[i] += minval
     end
 end
 
-function add_eps!(vv::Vector{Vector{Float64}})
+function add_eps!(vv::Vector{Vector{Float64}}; minval = eps())
     @inbounds for vec in vv
         for i in eachindex(vec)
-            vec[i] += eps()
+            vec[i] += minval
         end
     end
 end
+
 
 #*** In-place version of power ^ for performance
 

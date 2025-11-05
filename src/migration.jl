@@ -19,6 +19,9 @@ Each individual has probability `mig_rate` of moving to a randomly chosen *other
 """
 function random_migration(metapop::Vector{Vector{T}}; mig_rate::Float64, kwargs...) where T
     n_patches = length(metapop)
+    if n_patches == 1
+        return(copy(metapop))
+    end
     #--- Identify the migrants
     migrants_index = [rand(length(group)) .< mig_rate  for group in metapop]
     #--- Get the traits of the migrants
@@ -30,7 +33,7 @@ function random_migration(metapop::Vector{Vector{T}}; mig_rate::Float64, kwargs.
         #-> For each patch
         for j in eachindex(migrants[i])
             #-> and each migrant within this patch
-            ##Make them go to another random patch
+            ## Make them go to another random patch
             push!(new_metapop[random_int_except(1,n_patches,i)],migrants[i][j])
         end
     end
