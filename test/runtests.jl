@@ -1,7 +1,8 @@
+#using Pkg
+#Run with: Pkg.test("JuliassicPark")
+
 using JuliassicPark
 using Test
-using Pkg
-#Run using Pkg.test("JuliassicPark")
 
 """
 run_smoke_tests(parameters, fitness_function;

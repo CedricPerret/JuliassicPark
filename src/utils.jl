@@ -121,6 +121,44 @@ To make isempty deal with both population or metapopulation
 my_isempty(vec::Vector{<:Vector}) = all(isempty, vec)
 my_isempty(vec::Vector) = isempty(vec)
 
+#-----------------------------------------------
+#*** Faster operations on vectors of vectors
+#-----------------------------------------------
+
+#*** In-place version of power ^ for performance
+@inline function power!(v::Vector, p::Float64)
+    @inbounds @simd for i in eachindex(v)
+        v[i] = v[i]^p
+    end
+end
+
+@inline function power!(v::Vector{<:AbstractVector}, p::Float64)
+    @inbounds for j in eachindex(v)
+        @inbounds @simd for i in eachindex(v[j])
+            v[j][i] = v[j][i]^p
+        end
+    end
+end
+
+#@test = rand(100000)
+#@btime test .^ 2.3;
+#@btime power!(test,2.3);
+
+"""
+    total_length_vv(vv)
+
+Return the total number of elements across a vector of vectors. This is the fastest non-allocating method to compute `sum(length.(vv))`.
+"""
+#@ Do not specify the type of vv, it makes it much much slower
+@inline function total_length_vv(vv)
+    total = 0
+    @inbounds for i in 1:length(vv)
+        total += length(vv[i])
+    end
+    return total
+end
+
+
 
 #-----------------------------------------------
 #*** Manipulate vectors
@@ -317,26 +355,6 @@ function add_eps!(vv::Vector{Vector{Float64}}; minval = eps())
 end
 
 
-#*** In-place version of power ^ for performance
-
-@inline function power!(v::Vector, p::Float64)
-    @inbounds @simd for i in eachindex(v)
-        v[i] = v[i]^p
-    end
-end
-
-@inline function power!(v::Vector{<:AbstractVector}, p::Float64)
-    @inbounds for j in eachindex(v)
-        @inbounds @simd for i in eachindex(v[j])
-            v[j][i] = v[j][i]^p
-        end
-    end
-end
-
-
-#@test = rand(100000)
-#@btime test .^ 2.3;
-#@btime power!(test,2.3);
 
 #-----------------------------------------------
 #*** Function introspection and types

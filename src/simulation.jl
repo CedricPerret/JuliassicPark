@@ -255,7 +255,14 @@ function get_template_model(parameters_input, fitness_function, repro_function; 
             end
             #--- Migrate
             if migration_function !== nothing
-                population = migration_function(population; mig_kwargs...)
+                if contains(give_me_my_name(migration_function), "!")
+                    #-> In-place
+                    migration_function(population, new_population; mig_kwargs...)
+                    population, new_population = new_population, population 
+                else
+                    #-> Allocating
+                    population = migration_function(population; mig_kwargs...)
+                end
             end
         end
         if parameters[:z_ini] isa AbstractDataFrame

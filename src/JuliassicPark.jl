@@ -35,7 +35,7 @@ reproduction_WF_island_model_hard_selection, reproduction_WF_island_model_hard_s
 reproduction_explicit_poisson,
 reproduction_WF_sexual, reproduction_WF_sexual!,
 average_mapping, additive_mapping, recombination,
-random_migration,
+random_migration, random_migration!,
 initialise_population,
 get_default_parameters, print_parameters, print_default_parameters, set_default_parameters!,  reset_default_parameters!,
 random_int_except, remove_index, sample_except, create_interval, create_interval_from_size, fill_array_with_missing,  invert_3D,

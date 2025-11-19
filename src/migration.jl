@@ -4,6 +4,7 @@
 
 """
     random_migration(metapop; mig_rate)
+    random_migration!(new_metapop, metapop; mig_rate)
 
 Redistribute individuals across patches by independent migration.
 
@@ -11,15 +12,42 @@ Each individual has probability `mig_rate` of moving to a randomly chosen *other
 
 # Arguments
 - `metapop::Vector{Vector{T}}`: A list of patches, each containing individuals.
+- `new_metapop, metapop`: Preallocated destination and source metapopulations for the in-place version.
 - `mig_rate::Real`: Probability of migration for each individual.
 - `kwargs...`: Ignored; included for interface compatibility.
 
+# Behaviour
+- `random_migration` is the allocating version: it constructs and returns a new metapopulation.
+- `random_migration!` is the in-place version and the recommended entry point: **it automatically chooses the fastest method**.
+    - If the expected number of migrants is low, it uses the fully in-place kernel (`_random_migration!`), avoiding allocations.
+    - If many migrants are expected, it calls the allocating version internally and copies into `new_metapop`.
+
 # Returns
-- `Vector{Vector{T}}`: New metapopulation with migrants reassigned.
+- `random_migration`: a new metapopulation.
+- `random_migration!`: `nothing`; the result is written into `new_metapop`.
+
+# Notes
+- Migration never returns an individual to its own patch (`random_int_except` is used).
+- If `mig_rate == 0` or only one patch exists, the population is returned unchanged.
 """
+function random_migration!(metapop::Vector{Vector{T}}, new_metapop ; mig_rate::Float64, kwargs...) where T
+    n_patches = length(metapop)
+    #-> If no migration possible, skip
+    (n_patches == 1 || mig_rate == 0.) && return(nothing)
+    ## Cutoff chosen by trial and error.
+    if sum(length.(metapop)) * mig_rate < 2000
+        #-> Few migrants: use the non-allocating version
+        _random_migration!(metapop, new_metapop ; mig_rate)
+    else
+        #-> Many migrants: use the allocating version and copy results in-place
+        copyto!(new_metapop, random_migration(metapop; mig_rate))
+    end
+    return nothing
+end
+
 function random_migration(metapop::Vector{Vector{T}}; mig_rate::Float64, kwargs...) where T
     n_patches = length(metapop)
-    if n_patches == 1
+    if n_patches == 1 || mig_rate == 0.
         return(copy(metapop))
     end
     #--- Identify the migrants
@@ -40,15 +68,41 @@ function random_migration(metapop::Vector{Vector{T}}; mig_rate::Float64, kwargs.
     return(new_metapop)
 end
 
+function _random_migration!(metapop::Vector{Vector{T}}, new_metapop ; mig_rate::Float64, kwargs...) where T
+    n_patches = length(metapop)
+    #--- Start by copying old population into new_metapop
+    for group_i in 1:n_patches
+        empty!(new_metapop[group_i])
+        append!(new_metapop[group_i], metapop[group_i])
+    end
+    #--- Remove migrants in-place
+    for group_i in 1:n_patches
+        # We iterate from the end so that deleteat! does not shift upcoming indices.
+        # deleteat!(A, i) only shifts elements *after* index i. Any elements *before* i keep their indices.
+        for ind_i in length(metapop[group_i]):-1:1
+            if rand() < mig_rate
+                push!(new_metapop[random_int_except(1,n_patches,group_i)], metapop[group_i][ind_i])
+                deleteat!(new_metapop[group_i], ind_i)
+            end
+        end
+    end
+end
+
 
 #*** Programmatic registry of migration functions
 # Single source of truth for migration methods
 _MIGRATION_FUNS = [
+    (name = :random_migration!,
+     f = random_migration!,
+     desc = "Independent migration (auto-select in-place or allocating version)",
+     needs = [:mig_rate]),
+
     (name = :random_migration,
      f = random_migration,
-     desc = "Independent migration to a random other patch",
+     desc = "Independent migration, allocating version",
      needs = [:mig_rate]),
 ]
+
 
 list_migration_functions() = _MIGRATION_FUNS
 

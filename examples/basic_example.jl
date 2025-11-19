@@ -334,7 +334,7 @@ res = evol_model(parameters_example, cobb_douglas, reproduction_WF)
 
 #-----------------------------------------------
 #*** 7. Ecological model of growth
-# Demonstrates (i) additional parameters computed at the beginning of the simulation, (ii) varying population size
+# Demonstrates (i) additional parameters computed at the beginning of the simulation, (ii) varying population size, (iii) migration
 #-----------------------------------------------
 
 #--- Model description
@@ -353,21 +353,26 @@ end
 
 reset_default_parameters!()
 
-parameters_example = (
-    z_ini = true,
-    n_ini = 10,
-    n_patch = 20,
-    n_gen = 100,
-    mean_K = 100,
-    sd_K = 30,
-    de = 'p',
-    r = 2
+parameters_example = Dict(
+    :z_ini => true,
+    :n_ini => 10, :n_patch => 20,
+    :n_gen => 100,
+    :mean_K => 100, :sd_K => 30,
+    :de => 'p',
+    :r => 2,
+    :mig_rate => 0.05
 )
 
-res = evol_model(parameters_example, ecological_fitness, reproduction_explicit_poisson,
-additional_parameters = Dict(:K => draw_K))
 
 #--- Results: Groups grow to different sizes based on drawn K values
+res = evol_model(parameters_example, ecological_fitness, reproduction_explicit_poisson,
+additional_parameters = Dict(:K => draw_K), migration_function= random_migration!)
+@with res plot(:gen, :group_size, group = :patch, legend = false)
+
+#--- Results: High migration rate just homogeneise the group sizes
+parameters_example[:mig_rate] = 0.8
+res = evol_model(parameters_example, ecological_fitness, reproduction_explicit_poisson,
+additional_parameters = Dict(:K => draw_K), migration_function= random_migration!)
 @with res plot(:gen, :group_size, group = :patch, legend = false)
 
 #-----------------------------------------------

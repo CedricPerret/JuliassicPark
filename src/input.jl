@@ -57,91 +57,6 @@ function initialise_population(z_ini::AbstractDataFrame, n_ini::Int, n_patch::In
     return population
 end
 
-# function initialise_population(z_ini, n_ini::Int, n_patch::Int; boundaries=nothing, simplify = true, n_loci = 0)
-#     # if Tables.istable(z_ini)
-#     #     return initialise_population(DataFrame(z_ini), n_ini, n_patch; boundaries=boundaries, simplify=simplify, n_loci=n_loci)
-#     # end
-#     ## If call without going by evol_model
-#     n_trait = z_ini isa Tuple ? length(z_ini) : 1
-#     ## We wrap the boundaries the time of the initialisation (cannot wrap the parameter before because with a single trait, population simplifies to scalar rather than tuple)
-#     if n_trait == 1
-#         ## For safety, this is already done in the evol_model
-#         if !isa(z_ini,Tuple)
-#             z_ini = (z_ini,)
-#         end
-#         if boundaries !== nothing
-#             if !isa(boundaries[1],Vector) && !isa(boundaries[1],Tuple)
-#                 #-> We standardise the input to get [[min,max]] or [(min,max)]
-#                 boundaries = [boundaries]
-#             end
-#         end
-#     end
-#     ##Check for each boundaries if it exists (otherwise it is a boolean)
-#     # Safety if boundary is a single nothing
-#     check_boundaries = boundaries === nothing ? fill(false, n_trait) : (boundaries .!= nothing)
-    
-#     # Have to do this method if we want to allow for the user to also give directly initial population (which can be a metapop or not)
-#     generators = Vector{Function}(undef, n_trait)
-#     ##We do only diploid organism
-#     ploidy = 2
-#     #--- Find the type of input given (generators, one example group to copy in each patch, or metapop)
-#     for i in 1:n_trait
-#         if typeof(z_ini[i]) <: Distributions.Distribution
-#             #-> It is a distribution
-#             if check_boundaries[i]
-#                 if n_loci == 0
-#                     generators[i] = x -> [rand(truncated(x, boundaries[i][1], boundaries[i][2]), n_ini) for _ in 1:n_patch]
-#                 else
-#                     generators[i] = x -> [[rand(truncated(x, boundaries[i][1], boundaries[i][2]), n_loci, ploidy) for _ in 1:n_ini] for _ in 1:n_patch]
-#                 end
-#             else
-#                 if n_loci == 0
-#                     generators[i] = x -> [rand(x, n_ini) for _ in 1:n_patch]
-#                 else
-#                     generators[i] = x -> [[rand(x, n_loci, ploidy) for _ in 1:n_ini] for _ in 1:n_patch]
-#                 end
-#             end
-#         elseif !(z_ini[i] isa AbstractVector) || length(z_ini[i]) == 1
-#             #-> It is a single individual to copy
-#             if check_boundaries[i]
-#                 if any(z_ini[i] .> boundaries[i][2]) || any(z_ini[i] .< boundaries[i][1])
-#                     error("One of the (possible) initial value provided is out of bound.")
-#                 end
-#             end
-#             n_loci == 0 ?
-#             generators[i] = x -> [fill(z_ini[i], n_ini) for _ in 1:n_patch] :
-#             generators[i] = x -> [[fill(z_ini[i], n_loci,ploidy) for _ in 1 : n_ini] for _ in 1:n_patch]
-#         else
-#             #-> It is a vector to sample from 
-#             if check_boundaries[i]
-#                 if any(z_ini[i] .> boundaries[i][2]) || any(z_ini[i] .< boundaries[i][1])
-#                     error("One of the (possible) initial value provided is out of bound.")
-#                 end
-#             end
-#             n_loci == 0 ?
-#             generators[i] = x -> [rand(x, n_ini) for _ in 1:n_patch] :
-#             generators[i] = x -> [[rand(x, n_loci,ploidy) for _ in 1:n_ini] for _ in 1:n_patch]
-#         end
-#     end
-    
-#     #--- Generate the population for each trait
-#     population = [generators[i](z_ini[i]) for i in eachindex(generators)]
-
-#     if n_trait > 1
-#         population = [Tuple.(invert(getindex.(population, i))) for i in 1:n_patch]
-#     else
-#         #-> No tuple. Each individual is a scalar.
-#         population = population[1]
-#     end
-
-#     ## Simplify if single patch.It makes it faster for other function. However, less clean as it is not provide a consistent type for the output and function needs to take this in account.
-#     if simplify && n_patch == 1
-#         population = population[1]
-#     end
-#     return population
-# end
-
-
 
 function initialise_population(z_ini, n_ini, n_patch::Int; boundaries=nothing, simplify = true, n_loci = 0)
     n_trait = z_ini isa Tuple ? length(z_ini) : 1
@@ -214,6 +129,38 @@ end
 
 
 
+# function get_pop_at_gen(res::DataFrame; gen=:last, patch_col::Symbol=:patch, trait_cols=:auto)
+#     # 1) Pick the generation of interest
+#     selected_gen = gen === :last ? maximum(res.gen) : gen
+#     # 2) Keep only rows for that generation and sort by patch for deterministic output order
+#     df_gen = sort(res[res.gen .== selected_gen, :], patch_col)
+#     # 3) Determine which columns are traits
+#     if trait_cols === :auto
+#         trait_cols = filter(c -> startswith(string(c), "z"), names(df_gen))
+#     end
+#     # Sort traits by numeric suffix so z1,z2,...,z10 are in the right order
+#     trait_cols = sort(trait_cols, by = c -> begin
+#         m = match(r"\d+$", string(c))
+#         m === nothing ? 1 : parse(Int, m.match)
+#     end)
+#     # 4) Group rows by patch
+#     grouped_by_patch = groupby(df_gen, patch_col)
+#     # 5) Build population: per patch, collect individuals
+#     if length(trait_cols) == 1
+#         # Single trait: individuals are scalars
+#         zcol = trait_cols[1]
+#         return [collect(group_df[!, zcol]) for group_df in grouped_by_patch]
+#     else
+#         # Multiple traits: individuals are tuples (z1,z2,...)
+#         n_traits = length(trait_cols)
+#         return [begin
+#                     # Pull columns once for cache friendliness
+#                     cols = [group_df[!, trait_cols[t]] for t in 1:n_traits]
+#                     [ntuple(t -> cols[t][row_i], n_traits) for row_i in 1:nrow(group_df)]
+#                 end for group_df in grouped_by_patch]
+#     end
+# end
+
 function get_pop_at_gen(res::DataFrame; gen=:last, patch_col::Symbol=:patch, trait_cols=:auto)
     # 1) Pick the generation of interest
     selected_gen = gen === :last ? maximum(res.gen) : gen
@@ -228,26 +175,37 @@ function get_pop_at_gen(res::DataFrame; gen=:last, patch_col::Symbol=:patch, tra
         m = match(r"\d+$", string(c))
         m === nothing ? 1 : parse(Int, m.match)
     end)
-    # 4) Group rows by patch
-    grouped_by_patch = groupby(df_gen, patch_col)
+    # 4) Group rows by patch and build a lookup dictionary
+    grouped_by_patch = Dict(g[1, patch_col] => g for g in groupby(df_gen, patch_col))
+    all_patches = sort(unique(res[!, patch_col]))
     # 5) Build population: per patch, collect individuals
     if length(trait_cols) == 1
-        # Single trait: individuals are scalars
         zcol = trait_cols[1]
-        return [collect(group_df[!, zcol]) for group_df in grouped_by_patch]
+        # Determine element type (if any nonempty patch)
+        eltype_T = let first_nonempty = findfirst(p -> haskey(grouped_by_patch, p) && nrow(grouped_by_patch[p]) > 0, all_patches)
+            first_nonempty === nothing ? Any :
+            eltype(grouped_by_patch[all_patches[first_nonempty]][!, zcol])
+        end
+        return [haskey(grouped_by_patch, p) ?
+                    collect(grouped_by_patch[p][!, zcol]) :
+                    eltype_T[] for p in all_patches]
     else
-        # Multiple traits: individuals are tuples (z1,z2,...)
         n_traits = length(trait_cols)
-        return [begin
-                    # Pull columns once for cache friendliness
-                    cols = [group_df[!, trait_cols[t]] for t in 1:n_traits]
-                    [ntuple(t -> cols[t][row_i], n_traits) for row_i in 1:nrow(group_df)]
-                end for group_df in grouped_by_patch]
+        # Infer element type from first nonempty patch
+        eltype_T = let first_nonempty = findfirst(p -> haskey(grouped_by_patch, p) && nrow(grouped_by_patch[p]) > 0, all_patches)
+            first_nonempty === nothing ? Any :
+            Tuple{map(t -> eltype(grouped_by_patch[all_patches[first_nonempty]][!, trait_cols[t]]), 1:n_traits)...}
+        end
+        return [haskey(grouped_by_patch, p) ? begin
+                    g = grouped_by_patch[p]
+                    cols = [g[!, trait_cols[t]] for t in 1:n_traits]
+                    [ntuple(t -> cols[t][r], n_traits) for r in 1:nrow(g)]
+                end : eltype_T[] for p in all_patches]
     end
 end
 
-# Convenience wrapper for the last generation
-get_pop_at_last_gen(res::DataFrame) = get_pop_at_gen(res; gen=:last)
+#--- Convenience wrapper for the last generation
+get_pop_at_last_gen(res::DataFrame) = get_pop_at_gen(res; gen=:last, patch_col=:patch, trait_cols=:auto)
 
 
 
