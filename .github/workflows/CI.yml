@@ -17,7 +17,6 @@ jobs:
       - name: Set up Julia
         uses: julia-actions/setup-julia@v2
         with:
-          # Pick your minimum supported version here
           julia-version: '1.10'
 
       - name: Run tests
@@ -25,4 +24,4 @@ jobs:
           julia --project=. -e '
             using Pkg
             Pkg.instantiate()
-            Pkg.test(; julia_args=`--depwarn=no`)'
+            Pkg.test(;julia_args=`--depwarn=no`)'
