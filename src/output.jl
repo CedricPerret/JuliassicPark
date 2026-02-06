@@ -133,7 +133,6 @@ These types account for different ways users may return outputs from a model. Fo
 - Multiple traits can be encoded as tuples inside these structures
 
 # Example
-```julia
 test = [1, [1, 2], [[1, 2, 3], [4, 5, 6]], [1, 2, 3, 4, 5, 6]]
 
 _infer_variable_resolution(test, n_patch=2)
@@ -141,8 +140,8 @@ _infer_variable_resolution(test, n_patch=2)
 
 _infer_variable_resolution(test)
 # → ['G', 'g', 'i', 'I']
-
 """
+
 function _infer_variable_resolution(output;n_patch=1)
     level_of_detail = Vector{Char}(undef, length(output))
         for (i,o) in enumerate(output)

@@ -26,13 +26,16 @@ function run_smoke_tests(parameters, fitness_function;
                          structures = (:pop, :metapop),
                          io = stdout)
 
+    errors = String[] 
+
     for m in methods
         # Skip methods that need extra positional args evol_model does not pass
         if any(need in (:group_level_trait, :group_fitness_fun) for need in m.needs)
             continue
         end
         # Skip sexual when we test non-float
-        if contains(string(m.name),"sexual") && ((any(typeof.(parameters[:z_ini]) .== Bool)) || any(typeof.(parameters[:z_ini]) .== Int))
+        if contains(string(m.name),"sexual") &&
+           ((any(typeof.(parameters[:z_ini]) .== Bool)) || any(typeof.(parameters[:z_ini]) .== Int))
             continue
         end
 
@@ -41,12 +44,12 @@ function run_smoke_tests(parameters, fitness_function;
             for de in details
                 # fresh params, keep the run very small
                 params = deepcopy(parameters)
-                params[:de] = de
+                params[:de]      = de
                 params[:n_gen]   = 10
                 params[:n_ini]   = 5
                 params[:n_print] = 1
                 params[:j_print] = 2
-                
+
                 # minimal extras
                 if :mig_rate in m.needs && !haskey(params, :mig_rate)
                     params[:mig_rate] = 0.1
@@ -56,27 +59,36 @@ function run_smoke_tests(parameters, fitness_function;
                 end
 
                 if structure === :pop
-                    params[:n_patch] = 1
-                    params[:simplify] = true
+                    params[:n_patch]   = 1
+                    params[:simplify]  = true
                 else
-                    params[:n_patch] = 2
-                    params[:simplify] = false
+                    params[:n_patch]   = 2
+                    params[:simplify]  = false
                 end
 
                 try
                     evol_model(params, fitness_function, m.f)
-                    println(io, "[OK]    ", lpad(string(m.name), 45), "  de=", de, "  structure=", structure)
+                    println(io, "[OK]    ", lpad(string(m.name), 45),
+                            "  de=", de, "  structure=", structure)
                     flush(io)
                 catch err
                     msg = sprint(showerror, err)
-                    println(io, "[ERROR] ", lpad(string(m.name), 45), "  de=", de, "  structure=", structure, "  : ", msg)
+                    println(io, "[ERROR] ", lpad(string(m.name), 45),
+                            "  de=", de, "  structure=", structure, "  : ", msg)
                     flush(io)
+                    push!(errors,
+                          "[ERROR] $(string(m.name)) de=$(de) structure=$(structure): $(msg)")
                 end
             end
         end
     end
-    nothing
+
+    return errors 
 end
+
+
+
+
 
 #*** Single trait 
 function gaussian_fitness_function(z::Number; optimal, sigma, args...)
@@ -102,7 +114,25 @@ parameters_example = Dict(
     :j_print => 100
 )
 #res = evol_model(parameters_example, gaussian_fitness_function, reproduction_WF)
-run_smoke_tests(parameters_example, gaussian_fitness_function)
+@testset "smoke tests – single trait" begin
+    errors = run_smoke_tests(parameters_example, gaussian_fitness_function)
+    @test isempty(errors)
+end
+
+#As first version. To improve later on.
+@testset "basic invariants – simple WF run" begin
+    local params = deepcopy(parameters_example)
+    params[:n_gen] = 5
+    params[:n_ini] = 10
+    params[:n_patch] = 2
+    params[:de] = 'i'
+
+    res = evol_model(params, gaussian_fitness_function, reproduction_WF)
+
+    @test !isempty(res)
+    @test "fitness" ∈ names(res)
+    @test "z" ∈ names(res) 
+end
 
 #*** Two traits float
 function gaussian_fitness_function_two_traits(z::Tuple; optimal, sigma, args...)
@@ -112,7 +142,7 @@ function gaussian_fitness_function_two_traits(z::Tuple; optimal, sigma, args...)
     return (;fitness, distance_to_optimal)
 end
 
-parameters_example = Dict(
+parameters_example_two = Dict(
     :z_ini => (0.1,0.1),
     :n_gen => 100,
     :n_ini => 1000,
@@ -129,8 +159,12 @@ parameters_example = Dict(
 )
 
 ## Debugging
-#res = evol_model(parameters_example, gaussian_fitness_function_two_traits, reproduction_WF)
-run_smoke_tests(parameters_example, gaussian_fitness_function_two_traits)
+#res = evol_model(parameters_example_two, gaussian_fitness_function_two_traits, reproduction_WF)
+@testset "smoke tests – two traits" begin
+    errors = run_smoke_tests(parameters_example_two, gaussian_fitness_function_two_traits)
+    @test isempty(errors)
+end
+
 
 #*** Three traits of different types
 function test_fitness_function(z::Tuple; optimal, sigma, c, args...)
@@ -140,7 +174,7 @@ function test_fitness_function(z::Tuple; optimal, sigma, c, args...)
     return (;fitness, distance_to_optimal)
 end
 
-parameters_example = Dict(
+parameters_example_three = Dict(
     :z_ini => (0.1, true, 5),
     :n_gen => 3,
     :n_ini => 5,
@@ -158,7 +192,8 @@ parameters_example = Dict(
 )
 
 ## Debugging
-res = evol_model(parameters_example, test_fitness_function, reproduction_explicit_poisson)
-run_smoke_tests(parameters_example, test_fitness_function)
-
+@testset "smoke tests – three mixed traits" begin
+    errors = run_smoke_tests(parameters_example_three, test_fitness_function)
+    @test isempty(errors)
+end
 

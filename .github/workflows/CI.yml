@@ -25,4 +25,4 @@ jobs:
           julia --project=. -e '
             using Pkg
             Pkg.instantiate()
-            Pkg.test()'
+            Pkg.test(; julia_args=`--depwarn=no`)'
