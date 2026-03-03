@@ -7,7 +7,6 @@ using Distributions
 using StatsBase
 using DataFrames
 using Random
-using ArgParse
 using CSV
 using ProgressMeter
 

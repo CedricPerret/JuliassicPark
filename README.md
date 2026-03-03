@@ -20,11 +20,11 @@ The goal is simple: spend less time on boilerplate, and more time exploring idea
 
 ## Installation
 
-This package is not yet registered. You can install it from GitHub:
+Install it from General registry:
 
 ```julia
 using Pkg
-Pkg.add(url="https://github.com/CedricPerret/JuliassicPark.git")
+Pkg.add("JuliassicPark")
 ```
 
 ---
@@ -72,8 +72,15 @@ Examples are provided in the `basic_examples/` folder of the repository. They sh
 
 Note that:
 - The example file is plain `.jl` script but it is meant to be run step by step like a notebook (as you might do in R). This can easily be done in VS Code: open the file and run the current line or selection with Shift+Enter.
-- These examples use additional packages such as `Plots.jl` and `DataFramesMeta.jl`. They are **not required** for running JuliassicPark itself, but you may need to install them separately if you want to reproduce the example figures:
+- These examples use additional packages such as `Plots.jl` and `DataFramesMeta.jl`. They are **not required** for running JuliassicPark itself, but you may need to install them separately if you want to reproduce the example figures.
 
+---
+
+## Status and feedback
+
+JuliassicPark is currently in a beta `0.x` stage. The main features are implemented and I use it for my own research, but it has not been heavily tested across a wide range of models.
+
+If you run into errors, unexpected behaviour, or have suggestions, please open an issue on the GitHub repository or contact me at cedric.perret.research [at] gmail [dot] com.
 
 ---
 
