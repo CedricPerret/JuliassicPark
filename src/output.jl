@@ -145,7 +145,7 @@ _infer_variable_resolution(test)
 function _infer_variable_resolution(output;n_patch=1)
     level_of_detail = Vector{Char}(undef, length(output))
         for (i,o) in enumerate(output)
-            if !isa(o, Vector)
+            if !isa(o, AbstractVector)
                 #->{Any}
                 level_of_detail[i] = 'G'
             elseif isa(o[1],Union{AbstractVector, Tuple})
@@ -211,7 +211,7 @@ Trait values are extracted from the first element of `output_example`, and if th
 - `'i'`: Vector of `n_patch` vectors of length `n_pop` → individual-level (structured)
 - `'I'`: Vector of length `n_patch * n_pop` → individual-level (well-mixed)
 """
-function init_data_output(de,output_names::Vector{String},output_example,n_gen::Int, gen_first_print::Int, print_every::Int, i_simul, n_patch::Int, n_pop::Int, n_cst::Bool; output_cst_names=[],output_cst=[])
+function init_data_output(de,output_names::Vector{String},output_example,n_gen::Int, gen_first_print::Int, print_every::Int, i_simul, n_patch::Int, n_pop::Int, n_cst::Bool; output_cst_names=[],output_cst=[], n_traits)
     #--- Safety checks
     @assert de in ['g', 'p', 'i'] "Invalid value for `de`: expected one of 'g', 'p', or 'i'."
     @assert n_patch ≥ 1 "Expected `n_patch` to be a positive integer."
@@ -236,10 +236,9 @@ function init_data_output(de,output_names::Vector{String},output_example,n_gen::
     #--- Multiple traits?
     ## If yes, the first vector needs to be decoupled into one vector per trait.
     #@show output_example
-    correct_output_for_n_trait = _make_output_corrector(output_example[1])
-    n_trait = fieldcount(_leaf_type(output_example[1]))
-    if n_trait > 1
-        output_names = [["z"*string(i) for i in 1:n_trait]; output_names[2:end]]
+    correct_output_for_n_trait = _make_output_corrector(output_example[1],n_traits)
+    if n_traits > 1
+        output_names = [["z"*string(i) for i in 1:n_traits]; output_names[2:end]]
     end
     #--- Identify the resolution of the variables measured
     level_output = _infer_variable_resolution(correct_output_for_n_trait(output_example),n_patch=n_patch)
@@ -435,6 +434,7 @@ function init_data_output(de,output_names::Vector{String},output_example,n_gen::
 
     if n_cst
         save_data_to_df = function (df, i_gen, output)
+            
             if should_it_print(i_gen,gen_first_print,print_every) == true
                 corrected_output_for_n_trait = correct_output_for_n_trait(output)
                 corrected_output = [correction_function[i](corrected_output_for_n_trait[i]) for i in eachindex(correction_function)]
@@ -491,7 +491,7 @@ end
 
 
 """
-    _make_output_corrector(first_output::AbstractVector)
+    _make_output_corrector(first_output::AbstractVector,n_traits:Int)
 
 Return a function `correct(output)::Vector` that:
 - splits the first element (traits) into one vector per trait if the trait type is a Tuple,
@@ -500,34 +500,31 @@ Return a function `correct(output)::Vector` that:
 Examples
 --------
 # population: Vector{Tuple}
-correct = _make_output_corrector([(0.1,0.2), (0.3,0.4)])
+correct = _make_output_corrector([(0.1,0.2), (0.3,0.4)],2)
 correct([[ (0.1,0.2), (0.3,0.4) ], :foo])  # => [ [0.1,0.3], [0.2,0.4], :foo ]
 
 # metapopulation: Vector{Vector{Tuple}}
-correct = _make_output_corrector([[(0.1,0.2)], [(0.3,0.4)]])
+correct = _make_output_corrector([[(0.1,0.2)], [(0.3,0.4)]],2)
 correct([[ [(0.1,0.2)], [(0.3,0.4)] ], :foo])  # => [ [[0.1],[0.3]], [[0.2],[0.4]], :foo ]
 """
-function _make_output_corrector(z::AbstractVector)
-    T = _leaf_type(z) 
-    if T <: Tuple
-        n = fieldcount(T)
-        if z isa AbstractVector{<:AbstractVector}
-            #-> metapopulation: Vector{Vector{Tuple}}
-            return function (output)
-                z = output[1]  # Vector{Vector{Tuple}}
-                per_trait = [map(p -> getfield.(p, i), z) for i in 1:n]
-                [per_trait; output[2:end]]
-            end
-        else
-            #-> population: Vector{Tuple}
-            return function (output)
-                z = output[1]  # Vector{Tuple}
-                per_trait = float.([getfield.(z, i) for i in 1:n])
-                [per_trait; output[2:end]]
-            end
+function _make_output_corrector(z::AbstractVector, n_traits::Int)
+    n_traits == 1 && return identity
+    # value-based: treat as metapop if first element is a vector
+    is_metapop = !isempty(z) && first(z) isa AbstractVector
+
+    if is_metapop
+        #-> metapopulation: Vector{Vector{Tuple}}
+        return function (output)
+            z = output[1]
+            per_trait = [map(p -> getfield.(p, i), z) for i in 1:n_traits]
+            [per_trait; output[2:end]]
         end
     else
-        #-> Single trait
-        return identity
+        #-> population: Vector{Tuple}
+        return function (output)
+            z = output[1]
+            per_trait = [getfield.(z, i) for i in 1:n_traits]
+            [per_trait; output[2:end]]
+        end
     end
 end

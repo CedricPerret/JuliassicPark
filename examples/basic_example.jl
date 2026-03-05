@@ -3,12 +3,6 @@
 #**********************************************************
 
 ## Load JuliassicPark
-# If you started Julia from another folder, run `cd("path/to/JuliassicPark")` first.
-# If you launch Julia inside the JuliassicPark folder, `Pkg.activate(".")` is enough.
-
-using Pkg
-Pkg.activate(".")
-Pkg.instantiate()
 using JuliassicPark
 
 ## Optional packages for examples:

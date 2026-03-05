@@ -123,6 +123,7 @@ mu_m = 0.1
 mut_kwargs = (; sigma_m=0.05, boundaries=(0.0, 1.0))
 
 reproduction_Moran_DB!(pop, fitness, str_selection, mu_m, mut_kwargs)
+```
 """
 function reproduction_Moran_DB!(pop::Vector{T},fitness::Vector{Float64},str_selection::Float64,mu_m, mut_kwargs; n_replacement = 1, kwargs...) where T
     correct_fitness!(fitness,str_selection)
@@ -199,6 +200,7 @@ mu_m = 0.1
 mut_kwargs = (; sigma_m=0.05, boundaries=(0.0, 1.0))
 
 reproduction_Moran_pairwise_learning!(pop, fitness, str_selection, mu_m, mut_kwargs)
+```
 """
 function reproduction_Moran_pairwise_learning!(pop::Vector{T},fitness::Vector{Float64},str_selection::Float64,mu_m, mut_kwargs; kwargs...) where T
     learner_index, teacher_index = sample(1:length(pop),2,replace=false)
@@ -249,11 +251,12 @@ mut_kwargs = (; sigma_m = 1.0, boundaries = (0.0, 5.0))
 new_pop = reproduction_WF(pop, fitness, str_selection, mu_m, mut_kwargs)
 
 # Well-mixed metapopulation
+using BenchmarkTools
 pop = [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]
 fitness = [[0.1, 0.2], [0.3, 10.0], [0.2, 0.1]]
 new_pop = reproduction_WF(pop, fitness, str_selection, mu_m, mut_kwargs)
 @btime reproduction_WF!(pop,new_pop,  fitness, str_selection, mu_m, mut_kwargs)
-
+```
 """
 #--- Wright–Fisher: single population (vector)
 function reproduction_WF(pop::Vector{T},fitness::Vector{Float64},str_selection::Float64,mu_m, mut_kwargs; kwargs...) where T
@@ -384,6 +387,7 @@ str_selection = 1.0
 mut_kwargs = (; sigma_m = 0.5, boundaries = (0.0, 5.0))
 
 new_pop = reproduction_WF_island_model_hard_selection(pop, fitness, str_selection, mu_m, mut_kwargs; mig_rate = 0.1)
+```
 """
 function reproduction_WF_island_model_hard_selection(pop::Vector{Vector{T}},fitness::Vector{Vector{Float64}},str_selection::Float64,mu_m, mut_kwargs; mig_rate, kwargs...) where T
     group_size = length(pop[1]) ; n_groups = length(pop);
@@ -509,7 +513,7 @@ mut_kwargs = (; sigma_m = 0.5, boundaries = (0.0, 5.0))
 new_pop = reproduction_WF_island_model_soft_selection(pop, fitness, str_selection, mu_m, mut_kwargs; mig_rate = 0.1)
 
 @btime new_pop = reproduction_WF_island_model_soft_selection(pop, fitness, str_selection, mu_m, mut_kwargs; mig_rate = 0.1)
-
+```
 
 """
 function reproduction_WF_island_model_soft_selection(pop::Vector{Vector{T}},fitness::Vector{Vector{Float64}},str_selection::Float64,mu_m, mut_kwargs; mig_rate, kwargs...) where T
@@ -582,6 +586,7 @@ fitness = [[1000.0, 1.0, 1.0], [1.0, 1.0, 1.0]]
 group_level_trait = mean.(pop)
 mut_kwargs = (sigma_m = 0.1, boundaries = (0.0, 1.0))
 new_pop = reproduction_WF_copy_group_trait(pop, group_level_trait, fitness, 1.0, 0.1, mut_kwargs; group_fitness_fun = group_fitness_fun)
+```
 """
 function reproduction_WF_copy_group_trait!(population::Vector{Vector{T}},new_population::Vector{Vector{T}},group_level_trait, fitness::Vector{Vector{Float64}},str_selection::Float64,mu_m,mut_kwargs;group_fitness_fun,kwargs...) where T
     #--- Calculate group fitness and selection weights
@@ -633,6 +638,7 @@ mu_m = 0.2
 mut_kwargs = (sigma_m=0.1, boundaries=(0.0, 1.0))
 
 new_pop = reproduction_explicit_poisson(pop, fitness, str_selection, mu_m, mut_kwargs)
+```
 """
 #--- single population (vector)
 function reproduction_explicit_poisson(pop::Vector{T}, fitness::Vector{Float64}, str_selection::Float64, mu_m, mut_kwargs; kwargs...) where T
@@ -707,7 +713,7 @@ str_selection = 1.0
 mu_m = 0.2
 mut_kwargs = (sigma_m=0.1, boundaries=(0.0, 1.0))
 offspring = reproduction_WF_sexual(pop, fitness, 1.0, mu_m, mut_kwargs)
-
+```
 """
 #--- Wright–Fisher: single population (vector)
 function reproduction_WF_sexual(pop,fitness::Vector{Float64},str_selection::Float64,mu_m,mut_kwargs; kwargs...)

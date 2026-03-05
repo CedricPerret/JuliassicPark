@@ -230,6 +230,8 @@ Add the special case where there is a single value, in which case invert does no
 """
 @inline _my_invert(vv) = length(vv) == 1 ? vv : invert(vv)
 
+_my_invert(vv::Vector{Any}) = println(vv)
+
 ensure_tuple(x::Union{Tuple,NamedTuple}) = x
 ensure_tuple(x) = (x,)
 
@@ -272,7 +274,7 @@ Standard sigmoid curve scaled to `max`, with inflection at `mid_point`.
 ```julia
 using Plots
 plot(x -> curve_sigmoid(12.,1.,6.,x),0,10, legends=false)
-
+```
 """
 curve_sigmoid(max, steepness, mid_point, x) = max / (1 + exp(-steepness * (x - mid_point)))
 
@@ -369,6 +371,14 @@ give_me_my_name(f::Function) = String(Symbol(f))
     nested_eltype(x)
 
 This function takes an `AbstractArray` and returns the element type of the innermost nested array.
+
+This is a purely *type-based* operation: it repeatedly applies `eltype` while the type is an `AbstractArray`.
+
+!!! warning
+    If any intermediate container has `eltype == Any` (e.g. `Vector{Any}` or a `Vector{Any}`
+    holding vectors), recursion stops and the result is `Any`, even if all stored values
+    happen to be more specific (e.g. `Float64`). This is expected: `_leaf_type` reflects
+    declared container types, not runtime contents.
 
 # Examples
 

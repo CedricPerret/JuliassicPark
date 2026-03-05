@@ -177,7 +177,6 @@ function get_template_model(parameters_input, fitness_function, repro_function; 
         instanced_fitness_function = nothing; output = Any[];
         if !in_place_fitness_function
             correction = _infer_fitness_function_correction(population,fitness_function, parameters,calculate_phenotype)
-            # fitness_output = peek_fitness_output(population, fitness_function, parameters,correction)
             instanced_fitness_function = preprocess_fitness_function(population_phenotype, fitness_function, parameters,correction)
             output = [[population_phenotype]; instanced_fitness_function(population_phenotype; parameters...)]
         else
@@ -193,8 +192,10 @@ function get_template_model(parameters_input, fitness_function, repro_function; 
             fitness = vv(0.,population_phenotype)
             output = [[population_phenotype,fitness]; instanced_fitness_function(population_phenotype, fitness; parameters...)]
         end
-        @assert _leaf_type(output[2]) == Float64 "Fitness has to be of Float64 type"
 
+        fit = (output[2] isa AbstractVector && first(output[2]) isa AbstractVector) ? Iterators.flatten(output[2]) : output[2]
+        @assert all(x -> x isa AbstractFloat, fit) "Fitness values must be floating-point"
+        
         ## If fitness function returns a named tuple and no other output name specified, we get the names of the extras output.
         other_output_names = !isempty(parameters[:other_output_names]) ? parameters[:other_output_names] : extract_output_names(population_phenotype, fitness_function, parameters,correction)
         ## Truncate if too many names were provided
@@ -208,7 +209,7 @@ function get_template_model(parameters_input, fitness_function, repro_function; 
             parameters[:de], [["z", "fitness"]; other_output_names],
             output, parameters[:n_gen], parameters[:n_print], parameters[:j_print],
             i_simul, parameters[:n_patch], parameters[:n_ini], parameters[:n_cst];
-            output_cst_names=cst_output_name, output_cst=cst_output
+            output_cst_names=cst_output_name, output_cst=cst_output, n_traits
         )
 
         ## To avoid passing unnecessary or unused parameters (which could cause errors or reduce clarity), we explicitly filter only the relevant keyword arguments from the main `parameters` dictionary.

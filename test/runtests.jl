@@ -1,5 +1,5 @@
 #using Pkg
-#Run with: Pkg.test("JuliassicPark")
+#Run with: Pkg.test("JuliassicPark";julia_args=`--depwarn=no`)
 
 using JuliassicPark
 using Test
@@ -38,6 +38,7 @@ function run_smoke_tests(parameters, fitness_function;
            ((any(typeof.(parameters[:z_ini]) .== Bool)) || any(typeof.(parameters[:z_ini]) .== Int))
             continue
         end
+
 
         supported = m.applies_to === :both ? (:pop, :metapop) : (m.applies_to,)
         for structure in (s for s in structures if s in supported)

@@ -268,22 +268,23 @@ function preprocess_fitness_function(population, fitness_function,parameters, co
     #--- Define the instanced fitness function
     instanced_fitness_function = nothing
     if correction == 2
-        ##If single trait,  vectorize if to put it as the only element of the vector output [o1_ind1,o1_ind2] => [[o1_ind1,o1_ind2]]
-        ##If multiple traits,  invert so that we have a vector by output rather by individual [(o1_ind1,o2_ind1),(o1_ind2,o2_ind2)] => ([o1_ind1, o2_ind1], [o2_ind1, o2_ind2])
+        ##If single output,  vectorize if to put it as the only element of the vector output [o1_ind1,o1_ind2] => [[o1_ind1,o1_ind2]]
+        ##If multiple output,  invert so that we have a vector by output rather by individual [(o1_ind1,o2_ind1),(o1_ind2,o2_ind2)] => ([o1_ind1, o2_ind1], [o2_ind1, o2_ind2])
         ## Same logic at higher level.
         instanced_fitness_function = function(population; parameters...)
-            #_my_invert([_my_invert(collect.(ensure_tuple.(fitness_function.(group; parameters...)))) for group in population])
-            invert([_my_invert(collect.(ensure_tuple.(fitness_function.(group; parameters...)))) for group in population])
-
+            #Past one
+            #invert([_my_invert(collect.(ensure_tuple.(fitness_function.(group; parameters...)))) for group in population])
+            invert([collect(invert(ensure_tuple.(fitness_function.(group; parameters...)))) for group in population])
         end
     elseif correction == 1
-        ##If single trait,  vectorize if to put it as the only element of the vector output [o1_ind1,o1_ind2] => [[o1_ind1,o1_ind2]]
-        ##If multiple traits,  invert so that we have a vector by output rather by individual [(o1_ind1,o2_ind1),(o1_ind2,o2_ind2)] => ([o1_ind1, o2_ind1], [o2_ind1, o2_ind2])
+        ##If single output,  vectorize if to put it as the only element of the vector output [o1_ind1,o1_ind2] => [[o1_ind1,o1_ind2]]
+        ##If multiple output,  invert so that we have a vector by output rather by individual [(o1_ind1,o2_ind1),(o1_ind2,o2_ind2)] => ([o1_ind1, o2_ind1], [o2_ind1, o2_ind2])
         instanced_fitness_function = function(population; parameters...)
-            _my_invert(collect.(ensure_tuple.(fitness_function.(population; parameters...))))
+            #_my_invert(collect.(ensure_tuple.(fitness_function.(population; parameters...))))
+            collect(_my_invert(ensure_tuple.(fitness_function.(population; parameters...))))
         end
     elseif correction == 0
-        ##If single trait,  vectorize if to put it as the only element of the vector output [o1_ind1,o1_ind2] => [[o1_ind1,o1_ind2]]
+        ##If single output,  vectorize if to put it as the only element of the vector output [o1_ind1,o1_ind2] => [[o1_ind1,o1_ind2]]
         instanced_fitness_function = function(population; parameters...)
             collect(ensure_tuple(fitness_function(population; parameters...)))
         end
@@ -403,25 +404,25 @@ function _infer_fitness_function_correction_by_trial_error(population, fitness_f
     end
     results = [need_no_change, need_to_be_distributed, need_to_be_double_distributed]
 
-  if !any(results)
-        error("""
-        There is an error in the fitness function. To see the details of the error, 
-            please explicitly annotate the input type in your fitness function:
-            - ::Number for individuals
-            - ::Vector for groups
-            - ::Vector{<:Vector} for metapopulations
-        """)
-    elseif count(identity, results) > 1
-        error("""
-        Ambiguity: The fitness function works for multiple resolution of population.
-        ➤ Please explicitly annotate the input type in your fitness function:
-            - ::Number for individuals
-            - ::Vector for groups
-            - ::Vector{<:Vector} for metapopulations
-        """)
-    else
-        return findfirst(results) - 1
-    end
+    if !any(results)
+            error("""
+            There is an error in the fitness function. To see the details of the error, 
+                please explicitly annotate the input type in your fitness function:
+                - ::Number for individuals
+                - ::Vector for groups
+                - ::Vector{<:Vector} for metapopulations
+            """)
+        elseif count(identity, results) > 1
+            error("""
+            Ambiguity: The fitness function works for multiple resolution of population.
+            ➤ Please explicitly annotate the input type in your fitness function:
+                - ::Number for individuals
+                - ::Vector for groups
+                - ::Vector{<:Vector} for metapopulations
+            """)
+        else
+            return findfirst(results) - 1
+        end
 end
 
 function _test_if_function_works(f::Function)

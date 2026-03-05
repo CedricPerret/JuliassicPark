@@ -530,6 +530,9 @@ end
 Here the fitness function writes results into the provided `fitness` vector.  
 The simulation engine automatically recognizes such in-place functions, as long as the function name ends with `!`.
 
+!!! warning
+    In-place fitness functions only work with reproduction functions that **preserve group sizes**, since the fitness array is preallocated assuming a constant number of individuals per group.
+    
 #### Memory allocation
 
 Fitness is evaluated many times per generation and across many generations, so even small allocations add up. To keep simulations fast:
