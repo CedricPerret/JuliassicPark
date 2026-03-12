@@ -1,5 +1,6 @@
-#using Pkg
-#Run with: Pkg.test("JuliassicPark";julia_args=`--depwarn=no`)
+#Run with: 
+# using Pkg
+# Pkg.test("JuliassicPark";julia_args=`--depwarn=no`)
 
 using JuliassicPark
 using Test

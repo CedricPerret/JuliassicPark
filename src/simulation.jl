@@ -229,7 +229,13 @@ function get_template_model(parameters_input, fitness_function, repro_function; 
                 #@ To avoid reallocating memory
                 #@ Note that it means that the output keep the old extras when not calculating them but it is fine since we print/use extras only when calculating them.
                 res = instanced_fitness_function(population_phenotype; parameters..., should_it_print=should_it_print(i_gen, parameters[:n_print], parameters[:j_print]))
-                output[2:(1+length(res))] = res
+                if should_it_print(i_gen, parameters[:n_print], parameters[:j_print])
+                    #-> Update all the output
+                    output[2:(1+length(res))] = res
+                else
+                    #-> Update only fitness (the only element required for reproduction)
+                    output[2] = res[1]
+                end
             else
             #-> In-place fitness function
                 res = instanced_fitness_function(population_phenotype, output[2]; parameters..., should_it_print=should_it_print(i_gen, parameters[:n_print], parameters[:j_print]))

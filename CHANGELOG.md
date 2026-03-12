@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.1.3] - 2026-05-03
+- Update simulations so that only the first element of output is updated when should_it_print = false. It avoids compatibility problem with the default values of extra, e.g. NaN instead of [NaN].
+
 ## [0.1.2] - 2026-05-03
 - Fix fitness-type assertion for non in-place fitness functions by validating values (works even when the fitness container is Vector{Any} / Any[]).
 - Fix trait-count inference in init_data_output by passing n_trait explicitly (instead of inferring via _leaf_type/fieldcount).
