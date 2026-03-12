@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.1.3] - 2026-05-03
+## [0.1.3] - 2026-12-03
 - Update simulations so that only the first element of output is updated when should_it_print = false. It avoids compatibility problem with the default values of extra, e.g. NaN instead of [NaN].
 
 ## [0.1.2] - 2026-05-03
