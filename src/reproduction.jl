@@ -128,6 +128,7 @@ reproduction_Moran_DB!(pop, fitness, str_selection, mu_m, mut_kwargs)
 function reproduction_Moran_DB!(pop::Vector{T},fitness::Vector{Float64},str_selection::Float64,mu_m, mut_kwargs; n_replacement = 1, kwargs...) where T
     correct_fitness!(fitness,str_selection)
     pop[sample(eachindex(pop),n_replacement,replace=false)] = mutation.(safe_sample(pop,Weights(fitness),n_replacement),Ref(mu_m);mut_kwargs...)
+    return nothing
 end
 
 
@@ -165,6 +166,7 @@ reproduction_Moran_BD!(pop, fitness, str_selection, mu_m, mut_kwargs)
 function reproduction_Moran_BD!(pop::Vector{T},fitness::Vector{Float64},str_selection::Float64,mu_m, mut_kwargs; n_replacement = 1, kwargs...) where T
     correct_fitness!(fitness,str_selection)
     pop[safe_sample(eachindex(pop),Weights(1 ./ (fitness)),n_replacement,replace=false)] = mutation.(sample(pop,n_replacement),Ref(mu_m);mut_kwargs...)
+    return nothing
 end
 
 """
@@ -357,7 +359,7 @@ For each individual:
 2.b If migrant, sample a parent from the global pool (excluding the focal group) with probability ∝ `fitness^str_selection`.
 4. Apply mutation to the offspring in place using `mutation!`.
 
-This implements a **hard selection** regime: offspring compete across all groups, not just within their natal group.
+This implements a **hard selection** regime: migrants compete across groups.
 
 !!! note
     - Population size remains constant.
@@ -448,21 +450,22 @@ function reproduction_WF_island_model_hard_selection!(pop::Vector{Vector{T}},new
         #--- Draw offspring_of_migrants
         idx = findall(offspring_of_migrants)  
         ## Skip if no migrants
-        isempty(idx) && return nothing
-        ## Generate weight fitness only once (need to flatten)
-        w_fitness = StatsBase.Weights(getindex.(fitness, 1))
-        #--- Draw parents of migrants
-        #@ faster to generate all migrants then correct than do it one by one
-        parents_of_migrants = safe_sample(1:length(pop), w_fitness, length(idx))
-        ## Redraw only those that landed on their own patch, until clean
-        while true
-            bad = parents_of_migrants .== idx
-            any(bad) || break
-            parents_of_migrants[bad] = safe_sample(1:length(pop), w_fitness, count(bad))
-        end
-            #--- Assign parents
-        for t in eachindex(idx)
-            new_pop[idx[t]][1] = pop[parents_of_migrants[t]][1]
+        if !isempty(idx)
+            ## Generate weight fitness only once (need to flatten)
+            w_fitness = StatsBase.Weights(getindex.(fitness, 1))
+            #--- Draw parents of migrants
+            #@ faster to generate all migrants then correct than do it one by one
+            parents_of_migrants = safe_sample(1:length(pop), w_fitness, length(idx))
+            ## Redraw only those that landed on their own patch, until clean
+            while true
+                bad = parents_of_migrants .== idx
+                any(bad) || break
+                parents_of_migrants[bad] = safe_sample(1:length(pop), w_fitness, count(bad))
+            end
+                #--- Assign parents
+            for t in eachindex(idx)
+                new_pop[idx[t]][1] = pop[parents_of_migrants[t]][1]
+            end
         end
     end
     #--- Mutate
